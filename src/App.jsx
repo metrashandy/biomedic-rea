@@ -8,7 +8,9 @@ function App() {
   const [symptoms, setSymptoms] = useState(''); // ===== TAMBAHAN BARU: State untuk menyimpan teks gejala =====
   
   //dev nambah baru
+  // State untuk menyimpan hasil analisis dari backend (JSON response)
   const [result, setResult] = useState(null);
+  // State untuk mengatur kondisi loading (saat request sedang berjalan)
   const [loading, setLoading] = useState(false);
 
   const onDrop = useCallback(acceptedFiles => {
@@ -29,6 +31,12 @@ function App() {
     multiple: false,
   });
 
+
+// Fungsi ini menangani proses analisis gambar:
+// Mengirim file X-ray dan gejala ke backend,
+// lalu menerima hasil analisis dari AI,
+// dan menyimpannya ke state untuk ditampilkan di UI.
+// Selama proses berlangsung, loading diaktifkan untuk feedback ke user.
   const handleAnalyze = async () => {
   if (!selectedFile) return;
 
@@ -51,8 +59,7 @@ function App() {
     console.error("Error:", error);
   } finally {
     setLoading(false);
-  }
-};
+  }};
 
   return (
     <div className="min-h-screen bg-[#F4F7FB] font-sans pb-12">
@@ -135,71 +142,69 @@ function App() {
           </div>
 
           {result && result.result && (
-  <div className="mt-10 space-y-6">
+          <div className="mt-10 space-y-6">
 
-    {/* 🧾 HASIL ANALISIS */}
-    <div className="bg-white p-6 rounded-xl shadow border">
-      <h3 className="text-xl font-bold mb-3 text-slate-800">
-        🧾 Findings
-      </h3>
-      <p className="text-slate-700">
-        {result.result.analysis.findings}
-      </p>
-    </div>
+            {/* 🧾 HASIL ANALISIS */}
+            <div className="bg-white p-6 rounded-xl shadow border">
+              <h3 className="text-xl font-bold mb-3 text-slate-800">
+                🧾 Findings
+              </h3>
+              <p className="text-slate-700">
+                {result.result.analysis.findings}
+              </p>
+            </div>
 
-    {/* ⚠️ ABNORMALITAS */}
-    <div className="bg-white p-6 rounded-xl shadow border">
-      <h3 className="text-xl font-bold mb-3 text-slate-800">
-        ⚠️ Potential Issues
-      </h3>
-      <p className="text-slate-700">
-        {result.result.analysis.potential_abnormalities}
-      </p>
-    </div>
+            {/* ⚠️ ABNORMALITAS */}
+            <div className="bg-white p-6 rounded-xl shadow border">
+              <h3 className="text-xl font-bold mb-3 text-slate-800">
+                ⚠️ Potential Issues
+              </h3>
+              <p className="text-slate-700">
+                {result.result.analysis.potential_abnormalities}
+              </p>
+            </div>
 
-    {/* 📊 RISK */}
-    <div className="bg-white p-6 rounded-xl shadow border">
-      <h3 className="text-xl font-bold mb-3 text-slate-800">
-        📊 Risk Level
-      </h3>
+            {/* 📊 RISK */}
+            <div className="bg-white p-6 rounded-xl shadow border">
+              <h3 className="text-xl font-bold mb-3 text-slate-800">
+                📊 Risk Level
+              </h3>
 
-      <div className="w-full bg-slate-200 rounded-full h-4">
-        <div
-          className="bg-red-500 h-4 rounded-full"
-          style={{
-            width: `${result.result.risk_assessment.overall_health_risk_percentage}%`
-          }}
-        ></div>
-      </div>
+              <div className="w-full bg-slate-200 rounded-full h-4">
+                <div
+                  className="bg-red-500 h-4 rounded-full"
+                  style={{
+                    width: `${result.result.risk_assessment.overall_health_risk_percentage}%`
+                  }}
+                ></div>
+              </div>
 
-      <p className="mt-2 font-semibold text-red-600">
-        {result.result.risk_assessment.overall_health_risk_percentage}%
-      </p>
-    </div>
+              <p className="mt-2 font-semibold text-red-600">
+                {result.result.risk_assessment.overall_health_risk_percentage}%
+              </p>
+            </div>
 
-    {/* 💊 REKOMENDASI */}
-    <div className="bg-white p-6 rounded-xl shadow border">
-      <h3 className="text-xl font-bold mb-3 text-slate-800">
-        💊 Recommendations
-      </h3>
-      <p className="text-slate-700">
-        {result.result.recommendations}
-      </p>
-    </div>
+            {/* 💊 REKOMENDASI */}
+            <div className="bg-white p-6 rounded-xl shadow border">
+              <h3 className="text-xl font-bold mb-3 text-slate-800">
+                💊 Recommendations
+              </h3>
+              <p className="text-slate-700">
+                {result.result.recommendations}
+              </p>
+            </div>
 
-    {/* ⚠️ DISCLAIMER */}
-    <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-      <p className="text-sm text-yellow-800">
-        ⚠️ {result.result.disclaimer}
-      </p>
-    </div>
-
-  </div>
+            {/* ⚠️ DISCLAIMER */}
+            <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+              <p className="text-sm text-yellow-800">
+                ⚠️ {result.result.disclaimer}
+              </p>
+            </div>
+          </div>
 )}
 
         </div>
       </main>
-      
     </div>
   );
 }
