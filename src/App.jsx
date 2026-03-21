@@ -6,6 +6,10 @@ function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [symptoms, setSymptoms] = useState(''); // ===== TAMBAHAN BARU: State untuk menyimpan teks gejala =====
+  
+  //dev nambah baru
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const onDrop = useCallback(acceptedFiles => {
     const file = acceptedFiles[0];
@@ -24,6 +28,31 @@ function App() {
     },
     multiple: false,
   });
+
+  const handleAnalyze = async () => {
+  if (!selectedFile) return;
+
+  setLoading(true);
+
+  const formData = new FormData();
+  formData.append("image", selectedFile);
+  formData.append("symptoms", symptoms);
+
+  try {
+    const response = await fetch("http://127.0.0.1:8000/analyze", {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await response.json();
+    console.log(data); // debug
+    setResult(data);
+  } catch (error) {
+    console.error("Error:", error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-[#F4F7FB] font-sans pb-12">
@@ -93,16 +122,80 @@ function App() {
 
           <div className="mt-8">
             <button 
+              onClick={handleAnalyze}
               className={`w-full font-bold py-4 px-4 rounded-xl transition-colors shadow-sm text-lg tracking-wide ${
                 selectedFile 
                 ? 'bg-blue-500 hover:bg-blue-600 text-white'
                 : 'bg-slate-200 text-slate-400 cursor-not-allowed'
               }`}
-              disabled={!selectedFile}
+              disabled={!selectedFile || loading}
             >
-              AI Read
+              {loading ? "Analyzing..." : "AI Read"}
             </button>
           </div>
+
+          {result && result.result && (
+  <div className="mt-10 space-y-6">
+
+    {/* 🧾 HASIL ANALISIS */}
+    <div className="bg-white p-6 rounded-xl shadow border">
+      <h3 className="text-xl font-bold mb-3 text-slate-800">
+        🧾 Findings
+      </h3>
+      <p className="text-slate-700">
+        {result.result.analysis.findings}
+      </p>
+    </div>
+
+    {/* ⚠️ ABNORMALITAS */}
+    <div className="bg-white p-6 rounded-xl shadow border">
+      <h3 className="text-xl font-bold mb-3 text-slate-800">
+        ⚠️ Potential Issues
+      </h3>
+      <p className="text-slate-700">
+        {result.result.analysis.potential_abnormalities}
+      </p>
+    </div>
+
+    {/* 📊 RISK */}
+    <div className="bg-white p-6 rounded-xl shadow border">
+      <h3 className="text-xl font-bold mb-3 text-slate-800">
+        📊 Risk Level
+      </h3>
+
+      <div className="w-full bg-slate-200 rounded-full h-4">
+        <div
+          className="bg-red-500 h-4 rounded-full"
+          style={{
+            width: `${result.result.risk_assessment.overall_health_risk_percentage}%`
+          }}
+        ></div>
+      </div>
+
+      <p className="mt-2 font-semibold text-red-600">
+        {result.result.risk_assessment.overall_health_risk_percentage}%
+      </p>
+    </div>
+
+    {/* 💊 REKOMENDASI */}
+    <div className="bg-white p-6 rounded-xl shadow border">
+      <h3 className="text-xl font-bold mb-3 text-slate-800">
+        💊 Recommendations
+      </h3>
+      <p className="text-slate-700">
+        {result.result.recommendations}
+      </p>
+    </div>
+
+    {/* ⚠️ DISCLAIMER */}
+    <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+      <p className="text-sm text-yellow-800">
+        ⚠️ {result.result.disclaimer}
+      </p>
+    </div>
+
+  </div>
+)}
 
         </div>
       </main>
