@@ -22,6 +22,13 @@ function App() {
   const [showApp, setShowApp] = useState(false);
   const resultsRef = useRef(null);
 
+  const resetForm = () => {
+    setSelectedFile(null);
+    setImagePreview(null);
+    setSymptoms("");
+    setResult(null);
+  };
+
   useEffect(() => {
     if (result) {
       resultsRef.current?.scrollIntoView({
@@ -33,11 +40,25 @@ function App() {
 
   const onDrop = useCallback((acceptedFiles) => {
     const file = acceptedFiles[0];
-    if (file) {
-      setSelectedFile(file);
-      setImagePreview(URL.createObjectURL(file));
-      setResult(null);
+
+    if (!file) return;
+
+    // ✅ VALIDASI SIZE (5MB)
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      alert("File maksimal 5MB!");
+      return;
     }
+
+    // ✅ VALIDASI TYPE
+    const allowedTypes = ["image/jpeg", "image/png"];
+    if (!allowedTypes.includes(file.type)) {
+      alert("Hanya JPG dan PNG yang diperbolehkan!");
+      return;
+    }
+
+    setSelectedFile(file);
+    setImagePreview(URL.createObjectURL(file));
   }, []);
 
   const { getRootProps, getInputProps } = useDropzone({
@@ -330,7 +351,7 @@ function App() {
           className="bg-white border border-slate-300 text-slate-700 py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer font-medium shadow-sm"
           defaultValue="radiologi"
         >
-          <option value="radiologi">Radiologi (X-Ray, CT, MRI)</option>
+          <option value="radiologi">Radiology (X-Ray, CT, MRI)</option>
         </select>
       </header>
 
@@ -338,7 +359,10 @@ function App() {
         {/*TAMBAHAN BACK BUTTON KE HOME */}
         <div className="mb-6">
           <button
-            onClick={() => setShowApp(false)}
+            onClick={() => {
+              resetForm();
+              setShowApp(false);
+            }}
             className="text-blue-600 font-medium hover:underline"
           >
             ← Back to Home
@@ -347,10 +371,10 @@ function App() {
 
         <div className="bg-white p-8 rounded-2xl shadow-md border border-slate-200 max-w-3xl mx-auto">
           <h2 className="text-3xl font-bold text-slate-800 mb-2 text-center">
-            Analisis Gambar Medis (AI)
+            Medical Image Analysis
           </h2>
           <p className="text-center text-slate-500 mb-8">
-            Unggah gambar radiologi Anda untuk mendapatkan analisis instan.
+            Upload your radiology images to get instant analysis.
           </p>
           <div
             {...getRootProps()}
@@ -372,7 +396,7 @@ function App() {
                   Click to upload or drag and drop
                 </p>
                 <p className="text-sm text-slate-400">
-                  JPG, JPEG, PNG, or DICOM supported
+                  JPG, JPEG, and PNG supported
                 </p>
               </>
             )}
@@ -382,13 +406,13 @@ function App() {
               htmlFor="symptoms"
               className="block text-md font-medium text-slate-700 mb-2"
             >
-              Tambahkan Gejala atau Catatan (Opsional)
+              Patient Symptoms / History (Optional)
             </label>
             <textarea
               id="symptoms"
               rows="3"
               className="w-full border border-slate-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Contoh: Batuk selama 2 minggu, sesak napas..."
+              placeholder="Example : 40yo male, chronic smoker, continous cough, weight loss, etc"
               value={symptoms}
               onChange={(e) => setSymptoms(e.target.value)}
             ></textarea>
@@ -399,7 +423,7 @@ function App() {
               className={`w-full font-bold py-4 rounded-xl transition-colors shadow-sm text-lg ${!selectedFile ? "bg-slate-200 text-slate-400 cursor-not-allowed" : "bg-blue-500 hover:bg-blue-600 text-white"}`}
               disabled={!selectedFile || loading}
             >
-              {loading ? "Menganalisis..." : "Analisis dengan AI"}
+              {loading ? "Analyzing..." : "Analyze"}
             </button>
           </div>
         </div>
