@@ -10,6 +10,7 @@ import {
   RotateCcw,
   Download,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 function App() {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -18,6 +19,7 @@ function App() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [showApp, setShowApp] = useState(false);
   const resultsRef = useRef(null);
 
   useEffect(() => {
@@ -219,10 +221,109 @@ function App() {
     };
   };
 
+  // LANDING PAGE !!!
+
+  if (!showApp) {
+    return (
+      <motion.div
+        className="min-h-screen bg-sky-50"
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+      >
+        {/*HEADER*/}
+        <header className="flex justify-between items-center px-8 h-16 bg-sky-100 shadow-sm border-b border-sky-200">
+          <h1
+            onClick={() => setShowApp(false)}
+            className="text-2xl font-extrabold text-slate-800 tracking-tight cursor-pointer"
+          >
+            Biomedic <span className="text-blue-600">Read</span>
+          </h1>
+
+          <div className="space-x-6 text-slate-600 font-medium flex items-center">
+            <button
+              onClick={() => setShowApp(false)}
+              className="hover:text-blue-600 transition"
+            >
+              Home
+            </button>
+
+            <button className="hover:text-blue-600 transition">Features</button>
+
+            <button className="hover:text-blue-600 transition">About</button>
+
+            <button
+              onClick={() => setShowApp(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
+            >
+              Try Now
+            </button>
+          </div>
+        </header>
+
+        {/*HERO SECTION */}
+        <div className="grid md:grid-cols-2 gap-10 items-center max-w-6xl mx-auto px-6 py-20">
+          {/*KIRI*/}
+          <motion.div
+            initial={{ opacity: 0, x: -40 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2 }}
+          >
+            <h1 className="text-5xl font-extrabold text-slate-800 mb-6 leading-tight">
+              Understand Your <br />
+              Results <span className="text-blue-600">with AI</span>
+            </h1>
+
+            <p className="text-slate-600 mb-6">
+              Upload your X-ray and get instant medical insights, risk analysis,
+              and recommendations powered by AI.
+            </p>
+
+            <ul className="space-y-3 mb-8 text-slate-600">
+              <li>✔ Detect lung abnormalities</li>
+              <li>✔ Instant AI diagnosis support</li>
+              <li>✔ Risk percentage analysis</li>
+              <li>✔ Medical recommendations</li>
+            </ul>
+
+            <button
+              onClick={() => setShowApp(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-semibold shadow"
+            >
+              Try it now →
+            </button>
+          </motion.div>
+
+          {/*KANAN*/}
+          <motion.div
+            initial={{ opacity: 0, x: 40 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.4 }}
+          >
+            <img
+              src="https://images.unsplash.com/photo-1588776814546-1ffcf47267a5"
+              alt="medical ai"
+              className="rounded-2xl shadow-lg"
+            />
+          </motion.div>
+        </div>
+      </motion.div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-sky-50 font-sans pb-20">
-      <header className="flex justify-between items-center px-8 py-5 bg-sky-100 shadow-sm border-b border-sky-200">
-        <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight">
+    //ANIMASI BIAR BAGUS
+    <motion.div
+      className="min-h-screen bg-sky-50"
+      initial={{ opacity: 0, y: 40 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+    >
+      <header className="flex justify-between items-center px-8 h-16 bg-sky-100 shadow-sm border-b border-sky-200">
+        <h1
+          onClick={() => setShowApp(false)}
+          className="text-2xl font-extrabold text-slate-800 tracking-tight cursor-pointer"
+        >
           Biomedic <span className="text-blue-600">Read</span>
         </h1>
         <select
@@ -233,8 +334,18 @@ function App() {
         </select>
       </header>
 
-      <main className="max-w-4xl mx-auto mt-12 px-6">
-        <div className="bg-white p-10 rounded-2xl shadow-sm border border-slate-100">
+      <main className="max-w-6xl mx-auto px-6 py-16 space-y-6">
+        {/*TAMBAHAN BACK BUTTON KE HOME */}
+        <div className="mb-6">
+          <button
+            onClick={() => setShowApp(false)}
+            className="text-blue-600 font-medium hover:underline"
+          >
+            ← Back to Home
+          </button>
+        </div>
+
+        <div className="bg-white p-8 rounded-2xl shadow-md border border-slate-200 max-w-3xl mx-auto">
           <h2 className="text-3xl font-bold text-slate-800 mb-2 text-center">
             Analisis Gambar Medis (AI)
           </h2>
@@ -349,7 +460,7 @@ function App() {
           </div>
         )}
       </main>
-    </div>
+    </motion.div>
   );
 }
 
