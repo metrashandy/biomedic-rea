@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 import requests
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -24,17 +24,21 @@ async def analyze_xray(
     image: UploadFile = File(...),
     symptoms: str = Form(...)
 ):
+    # ❗ cek API key
+    if not RAPIDAPI_KEY:
+        raise HTTPException(status_code=500, detail="API key tidak ditemukan")
+
     # ✅ VALIDASI TYPE
     allowed_types = ["image/jpeg", "image/png"]
     if image.content_type not in allowed_types:
-        return {"error": "File harus JPG atau PNG"}
+        raise HTTPException(status_code=400, detail="File harus JPG atau PNG")
 
     contents = await image.read()
 
-    # ✅ VALIDASI SIZE (contoh: max 5MB)
-    MAX_SIZE = 5 * 1024 * 1024  # 5MB
+    # ✅ VALIDASI SIZE
+    MAX_SIZE = 5 * 1024 * 1024
     if len(contents) > MAX_SIZE:
-        return {"error": "Ukuran file maksimal 5MB"}
+        raise HTTPException(status_code=400, detail="Ukuran file maksimal 5MB")
 
     url = "https://ai-radiology-reporting-x-ray-interpretation-api.p.rapidapi.com/check"
 
@@ -53,13 +57,21 @@ async def analyze_xray(
         "image": (image.filename, contents, image.content_type)
     }
 
-    response = requests.post(url, headers=headers, files=files, params=params)
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            files=files,
+            params=params,
+            timeout=15
+        )
+    except requests.exceptions.RequestException:
+        raise HTTPException(status_code=500, detail="Gagal terhubung ke API eksternal")
 
     if response.status_code != 200:
-        return {
-            "error": "API request failed",
-            "status_code": response.status_code,
-            "detail": response.text
-        }
+        raise HTTPException(
+            status_code=response.status_code,
+            detail="API radiologi gagal memproses data"
+        )
 
     return response.json()
