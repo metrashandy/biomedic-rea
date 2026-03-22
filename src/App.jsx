@@ -9,8 +9,12 @@ import {
   Pill,
   RotateCcw,
   Download,
+  Trash2,
+  RefreshCw,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 
 function App() {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -46,14 +50,14 @@ function App() {
     // ✅ VALIDASI SIZE (5MB)
     const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
-      alert("File maksimal 5MB!");
+      toast.error("File maksimal 5MB!");
       return;
     }
 
     // ✅ VALIDASI TYPE
     const allowedTypes = ["image/jpeg", "image/png"];
     if (!allowedTypes.includes(file.type)) {
-      alert("Hanya JPG dan PNG yang diperbolehkan!");
+      toast.error("Hanya JPG dan PNG yang diperbolehkan!");
       return;
     }
 
@@ -63,7 +67,22 @@ function App() {
 
   const { getRootProps, getInputProps } = useDropzone({
     onDrop,
-    accept: { "image/jpeg": [], "image/png": [], "image/dicom": [] },
+    onDropRejected: (fileRejections) => {
+      const error = fileRejections[0]?.errors[0];
+
+      if (error?.code === "file-too-large") {
+        toast.error("File terlalu besar (max 5MB)");
+      } else if (error?.code === "file-invalid-type") {
+        toast.error("Format file harus JPG atau PNG");
+      } else {
+        toast.error("File tidak valid");
+      }
+    },
+    accept: {
+      "image/jpeg": [".jpg", ".jpeg"],
+      "image/png": [".png"],
+    },
+    maxSize: 5 * 1024 * 1024,
     multiple: false,
   });
 
@@ -92,10 +111,14 @@ function App() {
       const data = await response.json();
 
       // 4. Update state result dengan data asli dari server
+      if (data.error) {
+        toast.error(data.error);
+        return;
+      }
       setResult(data);
     } catch (error) {
       console.error("Error connecting to backend:", error);
-      alert(
+      toast.error(
         "Gagal terhubung ke server. Pastikan backend Python sudah berjalan!",
       );
     } finally {
@@ -193,10 +216,11 @@ function App() {
         doc.addPage();
         yPos = margin;
       }
+      const format = selectedFile.type.includes("png") ? "PNG" : "JPEG";
 
       doc.addImage(
         base64Image,
-        "JPEG",
+        format,
         xPos,
         yPos,
         finalImgWidth,
@@ -211,20 +235,20 @@ function App() {
       doc.text("Hasil Analisis:", margin, yPos);
       yPos += 8;
 
-      addWrappedText("Temuan (Findings):", true, 11);
+      addWrappedText("1. Findings:", true, 11);
       addWrappedText(result.result.analysis.findings, false, 11);
 
-      addWrappedText("Potensi Abnormalitas:", true, 11);
+      addWrappedText("2. Potential Abnormality:", true, 11);
       addWrappedText(result.result.analysis.potential_abnormalities, false, 11);
 
       addWrappedText(
-        `Level Risiko: ${result.result.risk_assessment.overall_health_risk_percentage}%`,
+        `3. Risk Level: ${result.result.risk_assessment.overall_health_risk_percentage}%`,
         true,
         11,
       );
       yPos += 2; // Spasi ekstra
 
-      addWrappedText("Rekomendasi:", true, 11);
+      addWrappedText("4. Recommendation:", true, 11);
       addWrappedText(result.result.recommendations, false, 11);
 
       // 4. Footer / Disclaimer (warna abu-abu)
@@ -246,13 +270,122 @@ function App() {
 
   if (!showApp) {
     return (
+      <>
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            duration: 3000,
+            style: {
+              zIndex: 9999,
+            },
+          }}
+        />
+        <motion.div
+          className="min-h-screen bg-sky-50"
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+        >
+          {/*HEADER*/}
+          <header className="flex justify-between items-center px-8 h-16 bg-sky-100 shadow-sm border-b border-sky-200">
+            <h1
+              onClick={() => setShowApp(false)}
+              className="text-2xl font-extrabold text-slate-800 tracking-tight cursor-pointer"
+            >
+              Biomedic <span className="text-blue-600">Read</span>
+            </h1>
+
+            <div className="space-x-6 text-slate-600 font-medium flex items-center">
+              <button
+                onClick={() => setShowApp(false)}
+                className="hover:text-blue-600 transition"
+              >
+                Home
+              </button>
+
+              <button className="hover:text-blue-600 transition">
+                Features
+              </button>
+
+              <button className="hover:text-blue-600 transition">About</button>
+
+              <button
+                onClick={() => setShowApp(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
+              >
+                Try Now
+              </button>
+            </div>
+          </header>
+
+          {/*HERO SECTION */}
+          <div className="grid md:grid-cols-2 gap-10 items-center max-w-6xl mx-auto px-6 py-20">
+            {/*KIRI*/}
+            <motion.div
+              initial={{ opacity: 0, x: -40 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2 }}
+            >
+              <h1 className="text-5xl font-extrabold text-slate-800 mb-6 leading-tight">
+                Understand Your <br />
+                Results <span className="text-blue-600">with AI</span>
+              </h1>
+
+              <p className="text-slate-600 mb-6">
+                Upload your X-ray and get instant medical insights, risk
+                analysis, and recommendations powered by AI.
+              </p>
+
+              <ul className="space-y-3 mb-8 text-slate-600">
+                <li>✔ Detect lung abnormalities</li>
+                <li>✔ Instant AI diagnosis support</li>
+                <li>✔ Risk percentage analysis</li>
+                <li>✔ Medical recommendations</li>
+              </ul>
+
+              <button
+                onClick={() => setShowApp(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-semibold shadow"
+              >
+                Try it now →
+              </button>
+            </motion.div>
+
+            {/*KANAN*/}
+            <motion.div
+              initial={{ opacity: 0, x: 40 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.4 }}
+            >
+              <img
+                src="https://images.unsplash.com/photo-1588776814546-1ffcf47267a5"
+                alt="medical ai"
+                className="rounded-2xl shadow-lg"
+              />
+            </motion.div>
+          </div>
+        </motion.div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 3000,
+          style: {
+            zIndex: 9999,
+          },
+        }}
+      />
       <motion.div
         className="min-h-screen bg-sky-50"
-        initial={{ opacity: 0, y: 30 }}
+        initial={{ opacity: 0, y: 40 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
       >
-        {/*HEADER*/}
         <header className="flex justify-between items-center px-8 h-16 bg-sky-100 shadow-sm border-b border-sky-200">
           <h1
             onClick={() => setShowApp(false)}
@@ -260,231 +393,174 @@ function App() {
           >
             Biomedic <span className="text-blue-600">Read</span>
           </h1>
-
-          <div className="space-x-6 text-slate-600 font-medium flex items-center">
-            <button
-              onClick={() => setShowApp(false)}
-              className="hover:text-blue-600 transition"
-            >
-              Home
-            </button>
-
-            <button className="hover:text-blue-600 transition">Features</button>
-
-            <button className="hover:text-blue-600 transition">About</button>
-
-            <button
-              onClick={() => setShowApp(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
-            >
-              Try Now
-            </button>
-          </div>
+          <select
+            className="bg-white border border-slate-300 text-slate-700 py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer font-medium shadow-sm"
+            defaultValue="radiologi"
+          >
+            <option value="radiologi">Radiology (X-Ray, CT, MRI)</option>
+          </select>
         </header>
 
-        {/*HERO SECTION */}
-        <div className="grid md:grid-cols-2 gap-10 items-center max-w-6xl mx-auto px-6 py-20">
-          {/*KIRI*/}
-          <motion.div
-            initial={{ opacity: 0, x: -40 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2 }}
-          >
-            <h1 className="text-5xl font-extrabold text-slate-800 mb-6 leading-tight">
-              Understand Your <br />
-              Results <span className="text-blue-600">with AI</span>
-            </h1>
+        <main className="max-w-6xl mx-auto px-6 py-16 space-y-6">
+          {/*TAMBAHAN BACK BUTTON KE HOME */}
+          <div className="mb-6">
+            <button
+              onClick={() => {
+                resetForm();
+                setShowApp(false);
+              }}
+              className="text-blue-600 font-medium hover:underline"
+            >
+              ← Back to Home
+            </button>
+          </div>
 
-            <p className="text-slate-600 mb-6">
-              Upload your X-ray and get instant medical insights, risk analysis,
-              and recommendations powered by AI.
+          <div className="bg-white p-8 rounded-2xl shadow-md border border-slate-200 max-w-3xl mx-auto">
+            <h2 className="text-3xl font-bold text-slate-800 mb-2 text-center">
+              Medical Image Analysis
+            </h2>
+            <p className="text-center text-slate-500 mb-8">
+              Upload your radiology images to get instant analysis.
             </p>
-
-            <ul className="space-y-3 mb-8 text-slate-600">
-              <li>✔ Detect lung abnormalities</li>
-              <li>✔ Instant AI diagnosis support</li>
-              <li>✔ Risk percentage analysis</li>
-              <li>✔ Medical recommendations</li>
-            </ul>
-
-            <button
-              onClick={() => setShowApp(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-semibold shadow"
+            <div
+              {...getRootProps()}
+              className="border-2 border-dashed border-slate-300 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-slate-50 hover:border-blue-400 transition-all cursor-pointer group"
             >
-              Try it now →
-            </button>
-          </motion.div>
-
-          {/*KANAN*/}
-          <motion.div
-            initial={{ opacity: 0, x: 40 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.4 }}
-          >
-            <img
-              src="https://images.unsplash.com/photo-1588776814546-1ffcf47267a5"
-              alt="medical ai"
-              className="rounded-2xl shadow-lg"
-            />
-          </motion.div>
-        </div>
-      </motion.div>
-    );
-  }
-
-  return (
-    //ANIMASI BIAR BAGUS
-    <motion.div
-      className="min-h-screen bg-sky-50"
-      initial={{ opacity: 0, y: 40 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: "easeOut" }}
-    >
-      <header className="flex justify-between items-center px-8 h-16 bg-sky-100 shadow-sm border-b border-sky-200">
-        <h1
-          onClick={() => setShowApp(false)}
-          className="text-2xl font-extrabold text-slate-800 tracking-tight cursor-pointer"
-        >
-          Biomedic <span className="text-blue-600">Read</span>
-        </h1>
-        <select
-          className="bg-white border border-slate-300 text-slate-700 py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer font-medium shadow-sm"
-          defaultValue="radiologi"
-        >
-          <option value="radiologi">Radiology (X-Ray, CT, MRI)</option>
-        </select>
-      </header>
-
-      <main className="max-w-6xl mx-auto px-6 py-16 space-y-6">
-        {/*TAMBAHAN BACK BUTTON KE HOME */}
-        <div className="mb-6">
-          <button
-            onClick={() => {
-              resetForm();
-              setShowApp(false);
-            }}
-            className="text-blue-600 font-medium hover:underline"
-          >
-            ← Back to Home
-          </button>
-        </div>
-
-        <div className="bg-white p-8 rounded-2xl shadow-md border border-slate-200 max-w-3xl mx-auto">
-          <h2 className="text-3xl font-bold text-slate-800 mb-2 text-center">
-            Medical Image Analysis
-          </h2>
-          <p className="text-center text-slate-500 mb-8">
-            Upload your radiology images to get instant analysis.
-          </p>
-          <div
-            {...getRootProps()}
-            className="border-2 border-dashed border-slate-300 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-slate-50 hover:border-blue-400 transition-all cursor-pointer group"
-          >
-            <input {...getInputProps()} />
-            {imagePreview ? (
-              <img
-                src={imagePreview}
-                alt="Preview"
-                className="max-h-80 rounded-lg object-contain"
-              />
-            ) : (
-              <>
-                <div className="mb-4 text-blue-500 group-hover:text-blue-600">
-                  <UploadCloud size={48} strokeWidth={1.5} />
+              <input id="fileInput" {...getInputProps()} />
+              {imagePreview ? (
+                <div className="flex flex-col items-center gap-4">
+                  {/* IMAGE */}
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    className="max-h-80 rounded-lg object-contain"
+                  />
                 </div>
-                <p className="text-slate-700 font-medium mb-2 text-lg">
-                  Click to upload or drag and drop
-                </p>
-                <p className="text-sm text-slate-400">
-                  JPG, JPEG, and PNG supported
-                </p>
-              </>
-            )}
-          </div>
-          <div className="mt-6">
-            <label
-              htmlFor="symptoms"
-              className="block text-md font-medium text-slate-700 mb-2"
-            >
-              Patient Symptoms / History (Optional)
-            </label>
-            <textarea
-              id="symptoms"
-              rows="3"
-              className="w-full border border-slate-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Example : 40yo male, chronic smoker, continous cough, weight loss, etc"
-              value={symptoms}
-              onChange={(e) => setSymptoms(e.target.value)}
-            ></textarea>
-          </div>
-          <div className="mt-8">
-            <button
-              onClick={handleAnalyze}
-              className={`w-full font-bold py-4 rounded-xl transition-colors shadow-sm text-lg ${!selectedFile ? "bg-slate-200 text-slate-400 cursor-not-allowed" : "bg-blue-500 hover:bg-blue-600 text-white"}`}
-              disabled={!selectedFile || loading}
-            >
-              {loading ? "Analyzing..." : "Analyze"}
-            </button>
-          </div>
-        </div>
-
-        {result && (
-          <div ref={resultsRef} className="mt-16 animate-fade-in">
-            <div className="text-center mb-8">
-              <h2 className="text-3xl font-bold text-slate-800">
-                Hasil Analisis
-              </h2>
-              <p className="text-slate-500 mt-1">
-                Berikut adalah temuan berdasarkan gambar dan data yang Anda
-                berikan.
-              </p>
+              ) : (
+                <>
+                  <div className="mb-4 text-blue-500 group-hover:text-blue-600">
+                    <UploadCloud size={48} strokeWidth={1.5} />
+                  </div>
+                  <p className="text-slate-700 font-medium mb-2 text-lg">
+                    Click to upload or drag and drop
+                  </p>
+                  <p className="text-sm text-slate-400">
+                    JPG, JPEG, and PNG supported
+                  </p>
+                </>
+              )}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <ResultCard
-                icon={<FileText />}
-                title="Temuan (Findings)"
-                content={result.result.analysis.findings}
-              />
-              <ResultCard
-                icon={<AlertTriangle className="text-orange-500" />}
-                title="Potensi Abnormalitas"
-                content={result.result.analysis.potential_abnormalities}
-              />
-              <RiskCard
-                percentage={
-                  result.result.risk_assessment.overall_health_risk_percentage
-                }
-              />
-              <ResultCard
-                icon={<Pill className="text-green-500" />}
-                title="Rekomendasi"
-                content={result.result.recommendations}
-              />
-              <div className="md:col-span-2">
-                <DisclaimerCard content={result.result.disclaimer} />
+            {imagePreview && (
+              <div className="flex justify-between mt-4 px-2 relative z-10">
+                {/* ❌ REMOVE */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation(); // 🔥 INI KUNCI
+                    setSelectedFile(null);
+                    setImagePreview(null);
+                  }}
+                  className="flex items-center gap-2 text-red-500 hover:text-red-600 font-medium"
+                >
+                  <Trash2 size={18} />
+                  Remove
+                </button>
+
+                {/* 🔄 CHANGE */}
+                <button
+                  onClick={() => {
+                    document.getElementById("fileInput").click();
+                  }}
+                  className="flex items-center gap-2 text-slate-500 hover:text-slate-700 font-medium"
+                >
+                  <RefreshCw size={18} />
+                  Change
+                </button>
+              </div>
+            )}
+            <div className="mt-6">
+              <label
+                htmlFor="symptoms"
+                className="block text-md font-medium text-slate-700 mb-2"
+              >
+                Patient Symptoms / History (Optional)
+              </label>
+              <textarea
+                id="symptoms"
+                rows="3"
+                className="w-full border border-slate-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Example : 40yo male, chronic smoker, continous cough, weight loss, etc"
+                value={symptoms}
+                onChange={(e) => setSymptoms(e.target.value)}
+              ></textarea>
+            </div>
+            <div className="mt-8">
+              <button
+                onClick={handleAnalyze}
+                className={`w-full font-bold py-4 rounded-xl transition-colors shadow-sm text-lg ${!selectedFile ? "bg-slate-200 text-slate-400 cursor-not-allowed" : "bg-blue-500 hover:bg-blue-600 text-white"}`}
+                disabled={!selectedFile || loading}
+              >
+                {loading ? "Analyzing..." : "Analyze"}
+              </button>
+            </div>
+          </div>
+
+          {result && (
+            <div ref={resultsRef} className="mt-16 animate-fade-in">
+              <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold text-slate-800">
+                  Analysis Result
+                </h2>
+                <p className="text-slate-500 mt-1">
+                  Below are the findings based on your images and data given.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <ResultCard
+                  icon={<FileText />}
+                  title="Findings"
+                  content={result.result.analysis.findings}
+                />
+                <ResultCard
+                  icon={<AlertTriangle className="text-orange-500" />}
+                  title="Potential Abnormality"
+                  content={result.result.analysis.potential_abnormalities}
+                />
+                <RiskCard
+                  percentage={
+                    result.result.risk_assessment.overall_health_risk_percentage
+                  }
+                />
+                <ResultCard
+                  icon={<Pill className="text-green-500" />}
+                  title="Recommendation"
+                  content={result.result.recommendations}
+                />
+                <div className="md:col-span-2">
+                  <DisclaimerCard content={result.result.disclaimer} />
+                </div>
+              </div>
+
+              <div className="mt-12 flex justify-center items-center gap-4">
+                <button
+                  onClick={handleReset}
+                  className="flex items-center gap-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold py-3 px-6 rounded-lg transition-colors shadow-sm"
+                >
+                  <RotateCcw size={18} /> Re-Diagnosis
+                </button>
+                <button
+                  onClick={handleExportPDF}
+                  className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors shadow-sm"
+                  disabled={exporting}
+                >
+                  <Download size={18} />{" "}
+                  {exporting ? "Exporting..." : "Export to PDF"}
+                </button>
               </div>
             </div>
-
-            <div className="mt-12 flex justify-center items-center gap-4">
-              <button
-                onClick={handleReset}
-                className="flex items-center gap-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold py-3 px-6 rounded-lg transition-colors shadow-sm"
-              >
-                <RotateCcw size={18} /> Diagnosis Ulang
-              </button>
-              <button
-                onClick={handleExportPDF}
-                className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors shadow-sm"
-                disabled={exporting}
-              >
-                <Download size={18} />{" "}
-                {exporting ? "Mengekspor..." : "Export ke PDF"}
-              </button>
-            </div>
-          </div>
-        )}
-      </main>
-    </motion.div>
+          )}
+        </main>
+      </motion.div>
+    </>
   );
 }
 
@@ -514,7 +590,7 @@ const RiskCard = ({ percentage }) => {
     <div className="bg-white p-6 rounded-xl shadow-sm border h-full">
       <div className="flex items-center gap-3 mb-3">
         <Activity />
-        <h3 className="text-xl font-bold text-slate-800">Level Risiko</h3>
+        <h3 className="text-xl font-bold text-slate-800">Risk Level</h3>
       </div>
       <div className="w-full bg-slate-200 rounded-full h-5 my-2">
         <div
