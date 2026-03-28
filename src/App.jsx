@@ -141,130 +141,243 @@ function App() {
     setExporting(true);
 
     const doc = new jsPDF("p", "mm", "a4");
+
     const margin = 15;
     const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight(); // Ambil tinggi kertas
+    const pageHeight = doc.internal.pageSize.getHeight();
     const usableWidth = pageWidth - 2 * margin;
+
     let yPos = 20;
 
-    // Fungsi cerdas untuk menulis teks: bisa otomatis bikin halaman baru kalau teks kepanjangan
-    const addWrappedText = (
-      text,
-      isBold = false,
-      fontSize = 11,
-      textColor = [0, 0, 0],
-    ) => {
+    const now = new Date();
+
+    // ===== FORMAT DATE & TIME =====
+    const date = now.toLocaleDateString("id-ID", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
+
+    const time = now.toLocaleTimeString("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const reportId = `BR-${now.getFullYear()}${String(
+      now.getMonth() + 1,
+    ).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(
+      now.getHours(),
+    ).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+
+    // ===== TEXT WRAPPER =====
+    const addWrappedText = (text, options = {}) => {
+      const {
+        isBold = false,
+        fontSize = 11,
+        color = [0, 0, 0],
+        spacing = 5,
+      } = options;
+
       doc.setFont("helvetica", isBold ? "bold" : "normal");
       doc.setFontSize(fontSize);
-      doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+      doc.setTextColor(...color);
 
       const lines = doc.splitTextToSize(text, usableWidth);
-      const lineHeight = doc.getLineHeight() / doc.internal.scaleFactor; // Tinggi tiap baris
-      const blockHeight = lines.length * lineHeight;
 
-      // Cek apakah posisi Y saat ini + teks baru akan melebihi batas bawah kertas
-      if (yPos + blockHeight > pageHeight - margin) {
-        doc.addPage(); // Bikin halaman baru
-        yPos = margin + 10; // Reset posisi Y di halaman baru
-      }
+      lines.forEach((line) => {
+        if (yPos > pageHeight - margin) {
+          doc.addPage();
+          yPos = margin;
+        }
+        doc.text(line, margin, yPos);
+        yPos += 6;
+      });
 
-      doc.text(lines, margin, yPos);
-      yPos += blockHeight + 5; // Spasi setelah paragraf
+      yPos += spacing;
     };
 
-    // 1. Judul Dokumen
+    // ===== HEADER =====
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text(
-      "Laporan Analisis Radiologi - Biomedic Read",
-      pageWidth / 2,
-      yPos,
-      { align: "center" },
-    );
-    yPos += 15;
+    doc.setFontSize(18);
+    doc.text("MEDICAL RADIOLOGY REPORT", pageWidth / 2, yPos, {
+      align: "center",
+    });
 
-    // 2. Gambar (Diperkecil dan ditaruh di tengah)
+    yPos += 6;
+
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.text("Biomedic Read AI System", pageWidth / 2, yPos, {
+      align: "center",
+    });
+
+    yPos += 10;
+
+    // ===== REPORT INFORMATION =====
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("Report Information", margin, yPos);
+
+    yPos += 6;
+
+    doc.setDrawColor(180);
+    doc.line(margin, yPos, pageWidth - margin, yPos);
+
+    yPos += 6;
+
+    // align kolom
+    const labelX = margin;
+    const colonX = margin + 30;
+    const valueX = margin + 35;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+
+    doc.text("Date", labelX, yPos);
+    doc.text(":", colonX, yPos);
+    doc.text(date, valueX, yPos);
+    yPos += 6;
+
+    doc.text("Time", labelX, yPos);
+    doc.text(":", colonX, yPos);
+    doc.text(time, valueX, yPos);
+    yPos += 6;
+
+    doc.text("Modality", labelX, yPos);
+    doc.text(":", colonX, yPos);
+    doc.text("X-Ray Analysis", valueX, yPos);
+    yPos += 6;
+
+    doc.text("System", labelX, yPos);
+    doc.text(":", colonX, yPos);
+    doc.text("Biomedic Read AI", valueX, yPos);
+    yPos += 6;
+
+    doc.text("Report ID", labelX, yPos);
+    doc.text(":", colonX, yPos);
+    doc.text(reportId, valueX, yPos);
+    yPos += 10;
+
+    // garis bawah info
+    doc.setDrawColor(200);
+    doc.line(margin, yPos, pageWidth - margin, yPos);
+
+    yPos += 10;
+
+    // ===== IMAGE =====
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("X-Ray Image", margin, yPos);
+
+    yPos += 6;
+
     const reader = new FileReader();
     reader.readAsDataURL(selectedFile);
+
     reader.onloadend = () => {
       const base64Image = reader.result;
-      const imgProps = doc.getImageProperties(base64Image);
-
-      // Batasi ukuran maksimal gambar agar tidak memenuhi kertas
-      const maxImgWidth = 110; // Maksimal lebar 11cm
-      const maxImgHeight = 80; // Maksimal tinggi 8cm
-      let finalImgWidth = imgProps.width;
-      let finalImgHeight = imgProps.height;
-
-      // Logika untuk resize gambar tapi tetap proporsional (aspect ratio)
-      if (finalImgWidth > maxImgWidth) {
-        const ratio = maxImgWidth / finalImgWidth;
-        finalImgWidth = maxImgWidth;
-        finalImgHeight = finalImgHeight * ratio;
-      }
-      if (finalImgHeight > maxImgHeight) {
-        const ratio = maxImgHeight / finalImgHeight;
-        finalImgHeight = maxImgHeight;
-        finalImgWidth = finalImgWidth * ratio;
-      }
-
-      // Hitung posisi X agar gambar ada persis di tengah
-      const xPos = (pageWidth - finalImgWidth) / 2;
-
-      // Cek halaman sebelum render gambar
-      if (yPos + finalImgHeight > pageHeight - margin) {
-        doc.addPage();
-        yPos = margin;
-      }
       const format = selectedFile.type.includes("png") ? "PNG" : "JPEG";
 
-      doc.addImage(
-        base64Image,
-        format,
-        xPos,
-        yPos,
-        finalImgWidth,
-        finalImgHeight,
-      );
-      yPos += finalImgHeight + 15; // Spasi setelah gambar
+      const imgProps = doc.getImageProperties(base64Image);
 
-      // 3. Menulis Hasil Analisis secara berurutan
+      const maxWidth = 110;
+      const maxHeight = 80;
+
+      let imgWidth = maxWidth;
+      let imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+
+      if (imgHeight > maxHeight) {
+        imgHeight = maxHeight;
+        imgWidth = (imgProps.width * imgHeight) / imgProps.height;
+      }
+
+      const xPos = (pageWidth - imgWidth) / 2;
+
+      doc.addImage(base64Image, format, xPos, yPos, imgWidth, imgHeight);
+
+      yPos += imgHeight + 5;
+
+      // garis bawah gambar
+      doc.setDrawColor(220);
+      doc.line(margin, yPos, pageWidth - margin, yPos);
+
+      yPos += 10;
+
+      // ===== MEDICAL ANALYSIS =====
       doc.setFont("helvetica", "bold");
       doc.setFontSize(14);
-      doc.setTextColor(0, 0, 0);
-      doc.text("Hasil Analisis:", margin, yPos);
+      doc.text("Medical Analysis", margin, yPos);
+
+      yPos += 6;
+
+      doc.setDrawColor(200);
+      doc.line(margin, yPos, pageWidth - margin, yPos);
+
       yPos += 8;
 
-      addWrappedText("1. Findings:", true, 11);
-      addWrappedText(result.result.analysis.findings, false, 11);
+      // ===== CONTENT =====
+      const sectionTitle = (title) => {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.text(title, margin, yPos);
+        yPos += 6;
+      };
 
-      addWrappedText("2. Potential Abnormality:", true, 11);
-      addWrappedText(result.result.analysis.potential_abnormalities, false, 11);
+      sectionTitle("1. Findings");
+      addWrappedText(result.result.analysis.findings);
 
+      sectionTitle("2. Potential Abnormalities");
+      addWrappedText(result.result.analysis.potential_abnormalities);
+
+      sectionTitle("3. Risk Assessment");
       addWrappedText(
-        `3. Risk Level: ${result.result.risk_assessment.overall_health_risk_percentage}%`,
-        true,
-        11,
-      );
-      yPos += 2; // Spasi ekstra
-
-      addWrappedText("4. Recommendation:", true, 11);
-      addWrappedText(result.result.recommendations, false, 11);
-
-      // 4. Footer / Disclaimer (warna abu-abu)
-      yPos += 10;
-      addWrappedText(
-        `Disclaimer: ${result.result.disclaimer}`,
-        false,
-        9,
-        [120, 120, 120],
+        `Overall Risk: ${result.result.risk_assessment.overall_health_risk_percentage}%`,
+        { isBold: true },
       );
 
-      // 5. Simpan file
-      doc.save("Laporan-Analisis-Biomedic-Read.pdf");
+      sectionTitle("4. Recommendation");
+      addWrappedText(result.result.recommendations);
+
+      sectionTitle("5. Disclaimer");
+      addWrappedText(result.result.disclaimer, {
+        fontSize: 9,
+        color: [120, 120, 120],
+      });
+
+      // ===== FOOTER =====
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text(
+        "This report is generated by AI and should not replace professional medical advice.",
+        margin,
+        pageHeight - 10,
+      );
+
+      doc.save("Medical_Report_Biomedic_Read.pdf");
       setExporting(false);
     };
   };
+
+  const dummyResult = {
+    result: {
+      analysis: {
+        findings: "There is opacity in left lung...",
+        potential_abnormalities: "Possible pneumonia",
+      },
+      risk_assessment: {
+        overall_health_risk_percentage: 75,
+      },
+      recommendations: "Consult doctor immediately",
+      disclaimer: "AI generated result",
+    },
+  };
+
+  <button
+    onClick={() => setResult(dummyResult)}
+    className="bg-green-500 text-white px-4 py-2 rounded"
+  >
+    Test PDF (No API)
+  </button>;
 
   // LANDING PAGE !!!
 
@@ -477,6 +590,14 @@ function App() {
                 </button>
               </div>
             )}
+            <div className="mt-4 flex gap-3 justify-center">
+              <button
+                onClick={() => setResult(dummyResult)}
+                className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg"
+              >
+                Test PDF (No API)
+              </button>
+            </div>
             <div className="mt-6">
               <label
                 htmlFor="symptoms"
