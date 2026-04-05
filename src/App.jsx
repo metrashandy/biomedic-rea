@@ -87,7 +87,10 @@ function App() {
   });
 
   const handleAnalyze = async () => {
-    if (!selectedFile) return;
+    if (!selectedFile) {
+      toast.error("Silakan upload gambar terlebih dahulu");
+      return;
+    }
     setLoading(true);
     setResult(null);
 
@@ -113,6 +116,11 @@ function App() {
       // 4. Update state result dengan data asli dari server
       if (data.error) {
         toast.error(data.error);
+        return;
+      }
+      if (!data.result || !data.result.analysis) {
+        setResult(null);
+        toast.error("Gambar tidak dapat dianalisis (bukan X-ray)");
         return;
       }
       setResult(data);
@@ -323,23 +331,66 @@ function App() {
         yPos += 6;
       };
 
+      // ================= ANALYSIS =================
       sectionTitle("1. Findings");
-      addWrappedText(result.result.analysis.findings);
+      addWrappedText(result?.result?.analysis?.findings || "-");
 
       sectionTitle("2. Potential Abnormalities");
-      addWrappedText(result.result.analysis.potential_abnormalities);
+      addWrappedText(result?.result?.analysis?.potential_abnormalities || "-");
 
-      sectionTitle("3. Risk Assessment");
+      sectionTitle("3. Observations");
+      addWrappedText(result?.result?.analysis?.observations || "-");
+
+      // ================= RISK =================
+      sectionTitle("4. Risk Level");
+
       addWrappedText(
-        `Overall Risk: ${result.result.risk_assessment.overall_health_risk_percentage}%`,
-        { isBold: true },
+        `Overall Risk : ${result?.result?.risk_assessment?.overall_health_risk_percentage ?? "-"}%`,
       );
 
-      sectionTitle("4. Recommendation");
-      addWrappedText(result.result.recommendations);
+      addWrappedText(
+        result?.result?.risk_assessment?.assessment_explanation || "-",
+      );
 
-      sectionTitle("5. Disclaimer");
-      addWrappedText(result.result.disclaimer, {
+      // ================= TECHNICAL =================
+      sectionTitle("5. Technical Assessment");
+
+      addWrappedText(
+        `Positioning : ${result?.result?.technical_assessment?.positioning || "-"}`,
+      );
+      addWrappedText(
+        `Exposure    : ${result?.result?.technical_assessment?.exposure || "-"}`,
+      );
+      addWrappedText(
+        `Artifacts   : ${result?.result?.technical_assessment?.artifacts || "-"}`,
+      );
+
+      // ================= INTERPRETATION =================
+      sectionTitle("6. Clinical Interpretation");
+      addWrappedText(result?.result?.specific_response || "-");
+
+      // ================= TREATMENT =================
+      sectionTitle("7. Treatment Recommendations");
+
+      addWrappedText(
+        `General Approach : ${result?.result?.treatment_recommendations?.general_approach || "-"}`,
+      );
+
+      addWrappedText(
+        `Possible Treatments : ${result?.result?.treatment_recommendations?.possible_treatments || "-"}`,
+      );
+
+      addWrappedText(
+        `Follow Up : ${result?.result?.treatment_recommendations?.follow_up || "-"}`,
+      );
+
+      // ================= FINAL =================
+      sectionTitle("8. General Recommendations");
+      addWrappedText(result?.result?.recommendations || "-");
+
+      // ================= DISCLAIMER =================
+      sectionTitle("9. Disclaimer");
+      addWrappedText(result?.result?.disclaimer || "-", {
         fontSize: 9,
         color: [120, 120, 120],
       });
@@ -353,7 +404,7 @@ function App() {
         pageHeight - 10,
       );
 
-      doc.save("Medical_Report_Biomedic_Read.pdf");
+      doc.save(`Medical_Report_${reportId}.pdf`);
       setExporting(false);
     };
   };
@@ -568,9 +619,10 @@ function App() {
                 {/* ❌ REMOVE */}
                 <button
                   onClick={(e) => {
-                    e.stopPropagation(); // 🔥 INI KUNCI
+                    e.stopPropagation();
                     setSelectedFile(null);
                     setImagePreview(null);
+                    setResult(null);
                   }}
                   className="flex items-center gap-2 text-red-500 hover:text-red-600 font-medium"
                 >
@@ -625,7 +677,7 @@ function App() {
             </div>
           </div>
 
-          {result && (
+          {result?.result?.analysis && (
             <div ref={resultsRef} className="mt-16 animate-fade-in">
               <div className="text-center mb-8">
                 <h2 className="text-3xl font-bold text-slate-800">
@@ -636,28 +688,87 @@ function App() {
                 </p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* BASIC */}
                 <ResultCard
                   icon={<FileText />}
                   title="Findings"
-                  content={result.result.analysis.findings}
+                  content={
+                    result?.result?.analysis?.findings || "Tidak tersedia"
+                  }
                 />
+
                 <ResultCard
                   icon={<AlertTriangle className="text-orange-500" />}
                   title="Potential Abnormality"
-                  content={result.result.analysis.potential_abnormalities}
-                />
-                <RiskCard
-                  percentage={
-                    result.result.risk_assessment.overall_health_risk_percentage
+                  content={
+                    result?.result?.analysis?.potential_abnormalities ||
+                    "Tidak tersedia"
                   }
                 />
+
+                <ResultCard
+                  icon={<FileText />}
+                  title="Observations"
+                  content={
+                    result?.result?.analysis?.observations || "Tidak tersedia"
+                  }
+                />
+
+                {/* RISK DETAIL */}
+                <RiskCard
+                  percentage={
+                    result?.result?.risk_assessment
+                      ?.overall_health_risk_percentage || 0
+                  }
+                />
+
+                {/* TECHNICAL */}
+                <ResultCard
+                  icon={<FileText />}
+                  title="Technical Assessment"
+                  content={`Positioning: ${
+                    result?.result?.technical_assessment?.positioning || "-"
+                  }
+Exposure: ${result?.result?.technical_assessment?.exposure || "-"}
+Artifacts: ${result?.result?.technical_assessment?.artifacts || "-"}`}
+                />
+
+                {/* INTERPRETATION */}
+                <ResultCard
+                  icon={<FileText />}
+                  title="Clinical Interpretation"
+                  content={
+                    result?.result?.specific_response || "Tidak tersedia"
+                  }
+                />
+
+                {/* TREATMENT */}
+                <ResultCard
+                  icon={<Pill className="text-green-500" />}
+                  title="Treatment Plan"
+                  content={`Approach: ${
+                    result?.result?.treatment_recommendations
+                      ?.general_approach || "-"
+                  }
+Treatment: ${
+                    result?.result?.treatment_recommendations
+                      ?.possible_treatments || "-"
+                  }
+Follow-up: ${result?.result?.treatment_recommendations?.follow_up || "-"}`}
+                />
+
+                {/* FINAL */}
                 <ResultCard
                   icon={<Pill className="text-green-500" />}
                   title="Recommendation"
-                  content={result.result.recommendations}
+                  content={result?.result?.recommendations || "Tidak tersedia"}
                 />
+
+                {/* DISCLAIMER */}
                 <div className="md:col-span-2">
-                  <DisclaimerCard content={result.result.disclaimer} />
+                  <DisclaimerCard
+                    content={result?.result?.disclaimer || "Tidak tersedia"}
+                  />
                 </div>
               </div>
 
@@ -695,32 +806,38 @@ const ResultCard = ({ icon, title, content }) => (
   </div>
 );
 const RiskCard = ({ percentage }) => {
+  const safePercentage = Number(percentage) || 0;
+
   const riskColor =
-    percentage > 70
+    safePercentage > 70
       ? "bg-red-500"
-      : percentage > 40
+      : safePercentage > 40
         ? "bg-yellow-500"
         : "bg-green-500";
+
   const riskTextColor =
-    percentage > 70
+    safePercentage > 70
       ? "text-red-600"
-      : percentage > 40
+      : safePercentage > 40
         ? "text-yellow-600"
         : "text-green-600";
+
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border h-full">
       <div className="flex items-center gap-3 mb-3">
         <Activity />
         <h3 className="text-xl font-bold text-slate-800">Risk Level</h3>
       </div>
+
       <div className="w-full bg-slate-200 rounded-full h-5 my-2">
         <div
           className={`${riskColor} h-5 rounded-full`}
-          style={{ width: `${percentage}%` }}
+          style={{ width: `${safePercentage}%` }}
         ></div>
       </div>
+
       <p className={`mt-2 font-bold text-2xl ${riskTextColor}`}>
-        {percentage}%
+        {safePercentage}%
       </p>
     </div>
   );
