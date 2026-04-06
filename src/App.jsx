@@ -207,7 +207,7 @@ function App() {
     // ===== HEADER =====
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
-    doc.text("MEDICAL RADIOLOGY REPORT", pageWidth / 2, yPos, {
+    doc.text("LAPORAN RADIOLOGI MEDIS", pageWidth / 2, yPos, {
       align: "center",
     });
 
@@ -215,7 +215,7 @@ function App() {
 
     doc.setFontSize(11);
     doc.setFont("helvetica", "normal");
-    doc.text("Biomedic Read AI System", pageWidth / 2, yPos, {
+    doc.text("Sistem AI Biomedic Read", pageWidth / 2, yPos, {
       align: "center",
     });
 
@@ -224,7 +224,7 @@ function App() {
     // ===== REPORT INFORMATION =====
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
-    doc.text("Report Information", margin, yPos);
+    doc.text("Informasi Umum", margin, yPos);
 
     yPos += 6;
 
@@ -241,22 +241,22 @@ function App() {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
 
-    doc.text("Date", labelX, yPos);
+    doc.text("Tanggal", labelX, yPos);
     doc.text(":", colonX, yPos);
     doc.text(date, valueX, yPos);
     yPos += 6;
 
-    doc.text("Time", labelX, yPos);
+    doc.text("Waktu", labelX, yPos);
     doc.text(":", colonX, yPos);
     doc.text(time, valueX, yPos);
     yPos += 6;
 
-    doc.text("Modality", labelX, yPos);
+    doc.text("Pengujian", labelX, yPos);
     doc.text(":", colonX, yPos);
     doc.text("X-Ray Analysis", valueX, yPos);
     yPos += 6;
 
-    doc.text("System", labelX, yPos);
+    doc.text("Sistem", labelX, yPos);
     doc.text(":", colonX, yPos);
     doc.text("Biomedic Read AI", valueX, yPos);
     yPos += 6;
@@ -275,7 +275,7 @@ function App() {
     // ===== IMAGE =====
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
-    doc.text("X-Ray Image", margin, yPos);
+    doc.text("Citra X-Ray", margin, yPos);
 
     yPos += 6;
 
@@ -332,17 +332,17 @@ function App() {
       };
 
       // ================= ANALYSIS =================
-      sectionTitle("1. Findings");
+      sectionTitle("1. Temuan");
       addWrappedText(result?.result?.analysis?.findings || "-");
 
-      sectionTitle("2. Potential Abnormalities");
+      sectionTitle("2. Potensi Kelainan");
       addWrappedText(result?.result?.analysis?.potential_abnormalities || "-");
 
-      sectionTitle("3. Observations");
+      sectionTitle("3. Observasi");
       addWrappedText(result?.result?.analysis?.observations || "-");
 
       // ================= RISK =================
-      sectionTitle("4. Risk Level");
+      sectionTitle("4. Tingkat Risiko");
 
       addWrappedText(
         `Overall Risk : ${result?.result?.risk_assessment?.overall_health_risk_percentage ?? "-"}%`,
@@ -353,7 +353,7 @@ function App() {
       );
 
       // ================= TECHNICAL =================
-      sectionTitle("5. Technical Assessment");
+      sectionTitle("5. Penilaian Teknis");
 
       addWrappedText(
         `Positioning : ${result?.result?.technical_assessment?.positioning || "-"}`,
@@ -366,11 +366,11 @@ function App() {
       );
 
       // ================= INTERPRETATION =================
-      sectionTitle("6. Clinical Interpretation");
+      sectionTitle("6. Interpretasi Klinis");
       addWrappedText(result?.result?.specific_response || "-");
 
       // ================= TREATMENT =================
-      sectionTitle("7. Treatment Recommendations");
+      sectionTitle("7. Rekomendasi Pengobatan");
 
       addWrappedText(
         `General Approach : ${result?.result?.treatment_recommendations?.general_approach || "-"}`,
@@ -385,7 +385,7 @@ function App() {
       );
 
       // ================= FINAL =================
-      sectionTitle("8. General Recommendations");
+      sectionTitle("8. Rekomendasi Secara Umum");
       addWrappedText(result?.result?.recommendations || "-");
 
       // ================= DISCLAIMER =================
@@ -692,7 +692,7 @@ function App() {
                 {/* BASIC */}
                 <ResultCard
                   icon={<FileText />}
-                  title="Findings"
+                  title="Temuan"
                   content={
                     result?.result?.analysis?.findings || "Tidak tersedia"
                   }
@@ -700,7 +700,7 @@ function App() {
 
                 <ResultCard
                   icon={<AlertTriangle className="text-orange-500" />}
-                  title="Potential Abnormality"
+                  title="Potensi Kelainan"
                   content={
                     result?.result?.analysis?.potential_abnormalities ||
                     "Tidak tersedia"
@@ -709,7 +709,7 @@ function App() {
 
                 <ResultCard
                   icon={<FileText />}
-                  title="Observations"
+                  title="Observasi"
                   content={
                     result?.result?.analysis?.observations || "Tidak tersedia"
                   }
@@ -726,7 +726,7 @@ function App() {
                 {/* TECHNICAL */}
                 <ResultCard
                   icon={<FileText />}
-                  title="Technical Assessment"
+                  title="Penilaian Teknis"
                   content={`Positioning: ${
                     result?.result?.technical_assessment?.positioning || "-"
                   }
@@ -737,7 +737,7 @@ Artifacts: ${result?.result?.technical_assessment?.artifacts || "-"}`}
                 {/* INTERPRETATION */}
                 <ResultCard
                   icon={<FileText />}
-                  title="Clinical Interpretation"
+                  title="Interpretasi Klinis"
                   content={
                     result?.result?.specific_response || "Tidak tersedia"
                   }
@@ -746,7 +746,7 @@ Artifacts: ${result?.result?.technical_assessment?.artifacts || "-"}`}
                 {/* TREATMENT */}
                 <ResultCard
                   icon={<Pill className="text-green-500" />}
-                  title="Treatment Plan"
+                  title="Rekomendasi Pengobatan"
                   content={`Approach: ${
                     result?.result?.treatment_recommendations
                       ?.general_approach || "-"
@@ -761,7 +761,7 @@ Follow-up: ${result?.result?.treatment_recommendations?.follow_up || "-"}`}
                 {/* FINAL */}
                 <ResultCard
                   icon={<Pill className="text-green-500" />}
-                  title="Recommendation"
+                  title="Rekomendasi Secara Umum"
                   content={result?.result?.recommendations || "Tidak tersedia"}
                 />
 
@@ -827,7 +827,7 @@ const RiskCard = ({ percentage }) => {
     <div className="bg-white p-6 rounded-xl shadow-sm border h-full">
       <div className="flex items-center gap-3 mb-3">
         <Activity />
-        <h3 className="text-xl font-bold text-slate-800">Risk Level</h3>
+        <h3 className="text-xl font-bold text-slate-800">Tingkat Risiko</h3>
       </div>
 
       <div className="w-full bg-slate-200 rounded-full h-5 my-2">
