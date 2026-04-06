@@ -467,17 +467,17 @@ function App() {
                 Home
               </button>
 
-              <button className="hover:text-blue-600 transition">
-                Features
-              </button>
+              <button className="hover:text-blue-600 transition">Fitur</button>
 
-              <button className="hover:text-blue-600 transition">About</button>
+              <button className="hover:text-blue-600 transition">
+                Tentang
+              </button>
 
               <button
                 onClick={() => setShowApp(true)}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
               >
-                Try Now
+                Coba Sekarang
               </button>
             </div>
           </header>
@@ -491,27 +491,27 @@ function App() {
               transition={{ delay: 0.2 }}
             >
               <h1 className="text-5xl font-extrabold text-slate-800 mb-6 leading-tight">
-                Understand Your <br />
-                Results <span className="text-blue-600">with AI</span>
+                Pahami Hasil <br />
+                Anda <span className="text-blue-600">dengan AI</span>
               </h1>
 
               <p className="text-slate-600 mb-6">
-                Upload your X-ray and get instant medical insights, risk
-                analysis, and recommendations powered by AI.
+                Unggah hasil X-ray Anda dan dapatkan analisis medis, tingkat
+                risiko, serta rekomendasi secara instan berbasis AI.
               </p>
 
               <ul className="space-y-3 mb-8 text-slate-600">
-                <li>✔ Detect lung abnormalities</li>
-                <li>✔ Instant AI diagnosis support</li>
-                <li>✔ Risk percentage analysis</li>
-                <li>✔ Medical recommendations</li>
+                <li>✔ Deteksi kelainan paru - paru</li>
+                <li>✔ Diagnosis AI instan</li>
+                <li>✔ Analisis persentase resiko</li>
+                <li>✔ Rekomendasi medis</li>
               </ul>
 
               <button
                 onClick={() => setShowApp(true)}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-semibold shadow"
               >
-                Try it now →
+                Coba Sekarang →
               </button>
             </motion.div>
 
@@ -561,7 +561,7 @@ function App() {
             className="bg-white border border-slate-300 text-slate-700 py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer font-medium shadow-sm"
             defaultValue="radiologi"
           >
-            <option value="radiologi">Radiology (X-Ray, CT, MRI)</option>
+            <option value="radiologi">Radiologi (X-Ray)</option>
           </select>
         </header>
 
@@ -575,16 +575,16 @@ function App() {
               }}
               className="text-blue-600 font-medium hover:underline"
             >
-              ← Back to Home
+              ← Kembali
             </button>
           </div>
 
           <div className="bg-white p-8 rounded-2xl shadow-md border border-slate-200 max-w-3xl mx-auto">
             <h2 className="text-3xl font-bold text-slate-800 mb-2 text-center">
-              Medical Image Analysis
+              Analisis Citra Medis
             </h2>
             <p className="text-center text-slate-500 mb-8">
-              Upload your radiology images to get instant analysis.
+              Unggah gambar radiologi anda untuk mendapatkan hasil instan
             </p>
             <div
               {...getRootProps()}
@@ -606,10 +606,10 @@ function App() {
                     <UploadCloud size={48} strokeWidth={1.5} />
                   </div>
                   <p className="text-slate-700 font-medium mb-2 text-lg">
-                    Click to upload or drag and drop
+                    Klik untuk mengunggah gambar atau seret dan lepaskan
                   </p>
                   <p className="text-sm text-slate-400">
-                    JPG, JPEG, and PNG supported
+                    Mendukung format gambar JPG, JPEG, and PNG
                   </p>
                 </>
               )}
@@ -627,7 +627,7 @@ function App() {
                   className="flex items-center gap-2 text-red-500 hover:text-red-600 font-medium"
                 >
                   <Trash2 size={18} />
-                  Remove
+                  Hapus
                 </button>
 
                 {/* 🔄 CHANGE */}
@@ -638,7 +638,7 @@ function App() {
                   className="flex items-center gap-2 text-slate-500 hover:text-slate-700 font-medium"
                 >
                   <RefreshCw size={18} />
-                  Change
+                  Ganti
                 </button>
               </div>
             )}
@@ -655,13 +655,13 @@ function App() {
                 htmlFor="symptoms"
                 className="block text-md font-medium text-slate-700 mb-2"
               >
-                Patient Symptoms / History (Optional)
+                Gejala/Riwayat Pasien (Opsional)
               </label>
               <textarea
                 id="symptoms"
                 rows="3"
                 className="w-full border border-slate-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Example : 40yo male, chronic smoker, continous cough, weight loss, etc"
+                placeholder="Contoh : Pria 40 tahun, perokok kronis, batuk terus menerus, penurunan berat badan, dan lainnya"
                 value={symptoms}
                 onChange={(e) => setSymptoms(e.target.value)}
               ></textarea>
@@ -672,7 +672,7 @@ function App() {
                 className={`w-full font-bold py-4 rounded-xl transition-colors shadow-sm text-lg ${!selectedFile ? "bg-slate-200 text-slate-400 cursor-not-allowed" : "bg-blue-500 hover:bg-blue-600 text-white"}`}
                 disabled={!selectedFile || loading}
               >
-                {loading ? "Analyzing..." : "Analyze"}
+                {loading ? "Sedang Menganalisis..." : "Analisis"}
               </button>
             </div>
           </div>
@@ -681,10 +681,11 @@ function App() {
             <div ref={resultsRef} className="mt-16 animate-fade-in">
               <div className="text-center mb-8">
                 <h2 className="text-3xl font-bold text-slate-800">
-                  Analysis Result
+                  Hasil Analsis
                 </h2>
                 <p className="text-slate-500 mt-1">
-                  Below are the findings based on your images and data given.
+                  Di bawah ini adalah temuan berdasarkan gambar dan data yang
+                  Anda berikan.
                 </p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -777,7 +778,7 @@ Follow-up: ${result?.result?.treatment_recommendations?.follow_up || "-"}`}
                   onClick={handleReset}
                   className="flex items-center gap-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold py-3 px-6 rounded-lg transition-colors shadow-sm"
                 >
-                  <RotateCcw size={18} /> Re-Diagnosis
+                  <RotateCcw size={18} /> Diagnosis Ulang
                 </button>
                 <button
                   onClick={handleExportPDF}
