@@ -1,4 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
+import { Routes, Route, Link, useNavigate } from "react-router-dom";
+import RecordDetail from './pages/RecordDetail';
+import PatientDetail from './pages/PatientDetail';
+import PatientList from "./pages/PatientList"; // Import file yang baru kita buat
 import { useDropzone } from "react-dropzone";
 import jsPDF from "jspdf";
 import {
@@ -406,20 +410,18 @@ function App() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
-          <header className="flex justify-between items-center px-8 h-16 bg-sky-100 shadow-sm border-b border-sky-200">
-            <h1
-              onClick={() => setShowApp(false)}
-              className="text-2xl font-extrabold text-slate-800 tracking-tight cursor-pointer"
-            >
+          <header className="flex justify-between items-center px-8 h-16 bg-sky-100 shadow-sm border-b border-sky-200 sticky top-0 z-50">
+            <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight cursor-pointer">
               Biomedic <span className="text-blue-600">Read</span>
             </h1>
+
             <div className="space-x-6 text-slate-600 font-medium flex items-center">
-              <button
-                onClick={() => setShowApp(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
-              >
-                Coba Sekarang
-              </button>
+              <Link to="/" className="hover:text-blue-600 transition">
+                Analisis AI Baru
+              </Link>
+              <Link to="/patients" className="hover:text-blue-600 transition">
+                Daftar Pasien
+              </Link>
             </div>
           </header>
           <div className="grid md:grid-cols-2 gap-10 items-center max-w-6xl mx-auto px-6 py-20">
@@ -469,267 +471,292 @@ function App() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: "easeOut" }}
       >
-        <header className="flex justify-between items-center px-8 h-16 bg-sky-100 shadow-sm border-b border-sky-200">
-          <h1
-            onClick={() => setShowApp(false)}
-            className="text-2xl font-extrabold text-slate-800 tracking-tight cursor-pointer"
-          >
+        <header className="flex justify-between items-center px-8 h-16 bg-sky-100 shadow-sm border-b border-sky-200 sticky top-0 z-50">
+          <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight cursor-pointer">
             Biomedic <span className="text-blue-600">Read</span>
           </h1>
+
+          <div className="space-x-6 text-slate-600 font-medium flex items-center">
+            <Link to="/" className="hover:text-blue-600 transition">
+              Analisis AI Baru
+            </Link>
+            <Link to="/patients" className="hover:text-blue-600 transition">
+              Daftar Pasien
+            </Link>
+          </div>
         </header>
 
-        <main className="max-w-6xl mx-auto px-6 py-16 space-y-6">
-          <div className="mb-6">
-            <button
-              onClick={() => {
-                resetForm();
-                setShowApp(false);
-              }}
-              className="text-blue-600 font-medium hover:underline"
-            >
-              ← Kembali
-            </button>
-          </div>
+        <Routes>
+          {/* Route 1: Halaman Daftar Pasien */}
+          <Route path="/patients" element={<PatientList />} />
+           <Route path="/patient/:id" element={<PatientDetail />} />
+           <Route path="/record/:recordId" element={<RecordDetail />} />
 
-          <div className="bg-white p-8 rounded-2xl shadow-md border border-slate-200 max-w-3xl mx-auto">
-            <h2 className="text-3xl font-bold text-slate-800 mb-2 text-center">
-              Analisis Citra Medis
-            </h2>
-            <p className="text-center text-slate-500 mb-8">
-              Unggah gambar radiologi anda untuk mendapatkan hasil instan
-            </p>
-            <div
-              {...getRootProps()}
-              className="border-2 border-dashed border-slate-300 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-slate-50 hover:border-blue-400 transition-all cursor-pointer group"
-            >
-              <input id="fileInput" {...getInputProps()} />
-              {imagePreview ? (
-                <img
-                  src={imagePreview}
-                  alt="Preview"
-                  className="max-h-80 rounded-lg object-contain"
-                />
-              ) : (
-                <>
-                  <div className="mb-4 text-blue-500 group-hover:text-blue-600">
-                    <UploadCloud size={48} strokeWidth={1.5} />
-                  </div>
-                  <p className="text-slate-700 font-medium mb-2 text-lg">
-                    Klik untuk mengunggah gambar atau seret dan lepaskan
+          <Route
+            path="/"
+            element={
+              <main className="max-w-6xl mx-auto px-6 py-16 space-y-6">
+                <div className="mb-6">
+                  <button
+                    onClick={() => {
+                      resetForm();
+                      setShowApp(false);
+                    }}
+                    className="text-blue-600 font-medium hover:underline"
+                  >
+                    ← Kembali
+                  </button>
+                </div>
+
+                <div className="bg-white p-8 rounded-2xl shadow-md border border-slate-200 max-w-3xl mx-auto">
+                  <h2 className="text-3xl font-bold text-slate-800 mb-2 text-center">
+                    Analisis Citra Medis
+                  </h2>
+                  <p className="text-center text-slate-500 mb-8">
+                    Unggah gambar radiologi anda untuk mendapatkan hasil instan
                   </p>
-                </>
-              )}
-            </div>
-            {imagePreview && (
-              <div className="flex justify-between mt-4 px-2 relative z-10">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    resetForm();
-                  }}
-                  className="flex items-center gap-2 text-red-500 hover:text-red-600 font-medium"
-                >
-                  <Trash2 size={18} /> Hapus
-                </button>
-                <button
-                  onClick={() => document.getElementById("fileInput").click()}
-                  className="flex items-center gap-2 text-slate-500 hover:text-slate-700 font-medium"
-                >
-                  <RefreshCw size={18} /> Ganti
-                </button>
-              </div>
-            )}
-            <div className="mt-6">
-              <label
-                htmlFor="symptoms"
-                className="block text-md font-medium text-slate-700 mb-2"
-              >
-                Gejala/Riwayat Pasien (Opsional)
-              </label>
-              <textarea
-                id="symptoms"
-                rows="3"
-                className="w-full border border-slate-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Contoh : Pria 40 tahun, perokok kronis..."
-                value={symptoms}
-                onChange={(e) => setSymptoms(e.target.value)}
-              ></textarea>
-            </div>
-
-            {/* Tombol Test PDF Sementara (Bisa dihapus nanti) */}
-            <button
-              onClick={() => setResult(dummyResult)}
-              className="mt-4 text-xs bg-slate-200 text-slate-600 px-3 py-1 rounded"
-            >
-              Test UI (Data Dummy)
-            </button>
-
-            <div className="mt-8">
-              <button
-                onClick={handleAnalyze}
-                className={`w-full font-bold py-4 rounded-xl transition-colors shadow-sm text-lg ${!selectedFile ? "bg-slate-200 text-slate-400 cursor-not-allowed" : "bg-blue-500 hover:bg-blue-600 text-white"}`}
-                disabled={!selectedFile || loading}
-              >
-                {loading ? "Menganalisis & Segmentasi AI..." : "Analisis"}
-              </button>
-            </div>
-          </div>
-
-          {result?.result?.analysis && (
-            <div ref={resultsRef} className="mt-16 animate-fade-in">
-              <div className="text-center mb-10">
-                <h2 className="text-3xl font-bold text-slate-800">
-                  Hasil Analsis
-                </h2>
-                <p className="text-slate-500 mt-1">
-                  Sistem kami memadukan segmentasi visual dan analisis klinis.
-                </p>
-              </div>
-
-              {/* ===== NEW: BAGIAN SEGMENTASI & PROFIL AI (HUGGING FACE) ===== */}
-              {(result.segmentation_image || result.ai_metadata) && (
-                <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 mb-8">
-                  <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2 border-b pb-4">
-                    <Scan className="text-blue-500" /> Hasil Profiling &
-                    Segmentasi AI
-                  </h3>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-                    {/* Kiri: Gambar Overlay */}
-                    <div>
-                      {result.segmentation_image ? (
-                        <div className="bg-slate-900 rounded-xl p-2">
-                          <img
-                            src={`data:image/png;base64,${result.segmentation_image}`}
-                            alt="Segmentasi AI"
-                            className="w-full rounded-lg object-contain h-auto"
-                          />
+                  <div
+                    {...getRootProps()}
+                    className="border-2 border-dashed border-slate-300 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-slate-50 hover:border-blue-400 transition-all cursor-pointer group"
+                  >
+                    <input id="fileInput" {...getInputProps()} />
+                    {imagePreview ? (
+                      <img
+                        src={imagePreview}
+                        alt="Preview"
+                        className="max-h-80 rounded-lg object-contain"
+                      />
+                    ) : (
+                      <>
+                        <div className="mb-4 text-blue-500 group-hover:text-blue-600">
+                          <UploadCloud size={48} strokeWidth={1.5} />
                         </div>
-                      ) : (
-                        <div className="h-64 bg-slate-100 flex items-center justify-center rounded-xl text-slate-400 border border-dashed">
-                          Gambar Segmentasi Tidak Tersedia
-                        </div>
-                      )}
+                        <p className="text-slate-700 font-medium mb-2 text-lg">
+                          Klik untuk mengunggah gambar atau seret dan lepaskan
+                        </p>
+                      </>
+                    )}
+                  </div>
+                  {imagePreview && (
+                    <div className="flex justify-between mt-4 px-2 relative z-10">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          resetForm();
+                        }}
+                        className="flex items-center gap-2 text-red-500 hover:text-red-600 font-medium"
+                      >
+                        <Trash2 size={18} /> Hapus
+                      </button>
+                      <button
+                        onClick={() =>
+                          document.getElementById("fileInput").click()
+                        }
+                        className="flex items-center gap-2 text-slate-500 hover:text-slate-700 font-medium"
+                      >
+                        <RefreshCw size={18} /> Ganti
+                      </button>
+                    </div>
+                  )}
+                  <div className="mt-6">
+                    <label
+                      htmlFor="symptoms"
+                      className="block text-md font-medium text-slate-700 mb-2"
+                    >
+                      Gejala/Riwayat Pasien (Opsional)
+                    </label>
+                    <textarea
+                      id="symptoms"
+                      rows="3"
+                      className="w-full border border-slate-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Contoh : Pria 40 tahun, perokok kronis..."
+                      value={symptoms}
+                      onChange={(e) => setSymptoms(e.target.value)}
+                    ></textarea>
+                  </div>
 
-                      {/* Legend Warna */}
-                      <div className="flex gap-4 mt-4 text-sm font-medium justify-center text-slate-600">
-                        <span className="flex items-center gap-1">
-                          <div className="w-3 h-3 bg-[rgb(255,191,0)] rounded-full"></div>{" "}
-                          Paru Kanan
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <div className="w-3 h-3 bg-[rgb(0,255,0)] rounded-full"></div>{" "}
-                          Paru Kiri
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <div className="w-3 h-3 bg-[rgb(0,0,255)] rounded-full"></div>{" "}
-                          Jantung
-                        </span>
+                  {/* Tombol Test PDF Sementara (Bisa dihapus nanti) */}
+                  <button
+                    onClick={() => setResult(dummyResult)}
+                    className="mt-4 text-xs bg-slate-200 text-slate-600 px-3 py-1 rounded"
+                  >
+                    Test UI (Data Dummy)
+                  </button>
+
+                  <div className="mt-8">
+                    <button
+                      onClick={handleAnalyze}
+                      className={`w-full font-bold py-4 rounded-xl transition-colors shadow-sm text-lg ${!selectedFile ? "bg-slate-200 text-slate-400 cursor-not-allowed" : "bg-blue-500 hover:bg-blue-600 text-white"}`}
+                      disabled={!selectedFile || loading}
+                    >
+                      {loading ? "Menganalisis & Segmentasi AI..." : "Analisis"}
+                    </button>
+                  </div>
+                </div>
+
+                {result?.result?.analysis && (
+                  <div ref={resultsRef} className="mt-16 animate-fade-in">
+                    <div className="text-center mb-10">
+                      <h2 className="text-3xl font-bold text-slate-800">
+                        Hasil Analsis
+                      </h2>
+                      <p className="text-slate-500 mt-1">
+                        Sistem kami memadukan segmentasi visual dan analisis
+                        klinis.
+                      </p>
+                    </div>
+
+                    {/* ===== NEW: BAGIAN SEGMENTASI & PROFIL AI (HUGGING FACE) ===== */}
+                    {(result.segmentation_image || result.ai_metadata) && (
+                      <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 mb-8">
+                        <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2 border-b pb-4">
+                          <Scan className="text-blue-500" /> Hasil Profiling &
+                          Segmentasi AI
+                        </h3>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                          {/* Kiri: Gambar Overlay */}
+                          <div>
+                            {result.segmentation_image ? (
+                              <div className="bg-slate-900 rounded-xl p-2">
+                                <img
+                                  src={`data:image/png;base64,${result.segmentation_image}`}
+                                  alt="Segmentasi AI"
+                                  className="w-full rounded-lg object-contain h-auto"
+                                />
+                              </div>
+                            ) : (
+                              <div className="h-64 bg-slate-100 flex items-center justify-center rounded-xl text-slate-400 border border-dashed">
+                                Gambar Segmentasi Tidak Tersedia
+                              </div>
+                            )}
+
+                            {/* Legend Warna */}
+                            <div className="flex gap-4 mt-4 text-sm font-medium justify-center text-slate-600">
+                              <span className="flex items-center gap-1">
+                                <div className="w-3 h-3 bg-[rgb(255,191,0)] rounded-full"></div>{" "}
+                                Paru Kanan
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <div className="w-3 h-3 bg-[rgb(0,255,0)] rounded-full"></div>{" "}
+                                Paru Kiri
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <div className="w-3 h-3 bg-[rgb(0,0,255)] rounded-full"></div>{" "}
+                                Jantung
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Kanan: Data Metadata AI */}
+                          <div className="space-y-4">
+                            <p className="text-slate-600 mb-4 leading-relaxed">
+                              Model AI (Hugging Face) telah memindai citra X-Ray
+                              ini dan berhasil mengekstrak profil pasien
+                              berdasarkan struktur tulang dan organ:
+                            </p>
+
+                            {result.ai_metadata && (
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-sky-50 p-4 rounded-xl border border-sky-100">
+                                  <span className="text-slate-500 text-sm flex items-center gap-1">
+                                    <User size={14} /> Prediksi Umur
+                                  </span>
+                                  <p className="font-bold text-lg text-slate-800 mt-1">
+                                    {result.ai_metadata.age} Tahun
+                                  </p>
+                                </div>
+                                <div className="bg-sky-50 p-4 rounded-xl border border-sky-100">
+                                  <span className="text-slate-500 text-sm flex items-center gap-1">
+                                    <User size={14} /> Gender
+                                  </span>
+                                  <p className="font-bold text-lg text-slate-800 mt-1">
+                                    {result.ai_metadata.gender}
+                                  </p>
+                                </div>
+                                <div className="bg-sky-50 p-4 rounded-xl border border-sky-100">
+                                  <span className="text-slate-500 text-sm flex items-center gap-1">
+                                    <Maximize size={14} /> Posisi X-Ray
+                                  </span>
+                                  <p className="font-bold text-lg text-slate-800 mt-1">
+                                    {result.ai_metadata.view}
+                                  </p>
+                                </div>
+                                <div className="bg-sky-50 p-4 rounded-xl border border-sky-100">
+                                  <span className="text-slate-500 text-sm flex items-center gap-1">
+                                    <Activity size={14} /> Rasio CTR (Jantung)
+                                  </span>
+                                  <p className="font-bold text-lg text-slate-800 mt-1">
+                                    {result.ai_metadata.ctr_ratio}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                            <p className="text-xs text-slate-400 mt-4 italic">
+                              *CTR (Cardiothoracic Ratio) di atas 0.5 dapat
+                              mengindikasikan pembengkakan jantung
+                              (Kardiomegali).
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {/* ===== END OF NEW SECTION ===== */}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <ResultCard
+                        icon={<FileText />}
+                        title="Temuan Klinis"
+                        content={result?.result?.analysis?.findings || "-"}
+                      />
+                      <ResultCard
+                        icon={<AlertTriangle className="text-orange-500" />}
+                        title="Potensi Kelainan"
+                        content={
+                          result?.result?.analysis?.potential_abnormalities ||
+                          "-"
+                        }
+                      />
+                      <RiskCard
+                        percentage={
+                          result?.result?.risk_assessment
+                            ?.overall_health_risk_percentage || 0
+                        }
+                      />
+                      <ResultCard
+                        icon={<Pill className="text-green-500" />}
+                        title="Rekomendasi Pengobatan"
+                        content={`Approach: ${result?.result?.treatment_recommendations?.general_approach || "-"}\nTreatment: ${result?.result?.treatment_recommendations?.possible_treatments || "-"}`}
+                      />
+                      <div className="md:col-span-2">
+                        <DisclaimerCard
+                          content={result?.result?.disclaimer || "-"}
+                        />
                       </div>
                     </div>
 
-                    {/* Kanan: Data Metadata AI */}
-                    <div className="space-y-4">
-                      <p className="text-slate-600 mb-4 leading-relaxed">
-                        Model AI (Hugging Face) telah memindai citra X-Ray ini
-                        dan berhasil mengekstrak profil pasien berdasarkan
-                        struktur tulang dan organ:
-                      </p>
-
-                      {result.ai_metadata && (
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-sky-50 p-4 rounded-xl border border-sky-100">
-                            <span className="text-slate-500 text-sm flex items-center gap-1">
-                              <User size={14} /> Prediksi Umur
-                            </span>
-                            <p className="font-bold text-lg text-slate-800 mt-1">
-                              {result.ai_metadata.age} Tahun
-                            </p>
-                          </div>
-                          <div className="bg-sky-50 p-4 rounded-xl border border-sky-100">
-                            <span className="text-slate-500 text-sm flex items-center gap-1">
-                              <User size={14} /> Gender
-                            </span>
-                            <p className="font-bold text-lg text-slate-800 mt-1">
-                              {result.ai_metadata.gender}
-                            </p>
-                          </div>
-                          <div className="bg-sky-50 p-4 rounded-xl border border-sky-100">
-                            <span className="text-slate-500 text-sm flex items-center gap-1">
-                              <Maximize size={14} /> Posisi X-Ray
-                            </span>
-                            <p className="font-bold text-lg text-slate-800 mt-1">
-                              {result.ai_metadata.view}
-                            </p>
-                          </div>
-                          <div className="bg-sky-50 p-4 rounded-xl border border-sky-100">
-                            <span className="text-slate-500 text-sm flex items-center gap-1">
-                              <Activity size={14} /> Rasio CTR (Jantung)
-                            </span>
-                            <p className="font-bold text-lg text-slate-800 mt-1">
-                              {result.ai_metadata.ctr_ratio}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                      <p className="text-xs text-slate-400 mt-4 italic">
-                        *CTR (Cardiothoracic Ratio) di atas 0.5 dapat
-                        mengindikasikan pembengkakan jantung (Kardiomegali).
-                      </p>
+                    <div className="mt-12 flex justify-center items-center gap-4">
+                      <button
+                        onClick={handleReset}
+                        className="flex items-center gap-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold py-3 px-6 rounded-lg transition-colors shadow-sm"
+                      >
+                        <RotateCcw size={18} /> Diagnosis Ulang
+                      </button>
+                      <button
+                        onClick={handleExportPDF}
+                        className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors shadow-sm"
+                        disabled={exporting}
+                      >
+                        <Download size={18} />{" "}
+                        {exporting ? "Exporting..." : "Export to PDF"}
+                      </button>
                     </div>
                   </div>
-                </div>
-              )}
-              {/* ===== END OF NEW SECTION ===== */}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <ResultCard
-                  icon={<FileText />}
-                  title="Temuan Klinis"
-                  content={result?.result?.analysis?.findings || "-"}
-                />
-                <ResultCard
-                  icon={<AlertTriangle className="text-orange-500" />}
-                  title="Potensi Kelainan"
-                  content={
-                    result?.result?.analysis?.potential_abnormalities || "-"
-                  }
-                />
-                <RiskCard
-                  percentage={
-                    result?.result?.risk_assessment
-                      ?.overall_health_risk_percentage || 0
-                  }
-                />
-                <ResultCard
-                  icon={<Pill className="text-green-500" />}
-                  title="Rekomendasi Pengobatan"
-                  content={`Approach: ${result?.result?.treatment_recommendations?.general_approach || "-"}\nTreatment: ${result?.result?.treatment_recommendations?.possible_treatments || "-"}`}
-                />
-                <div className="md:col-span-2">
-                  <DisclaimerCard content={result?.result?.disclaimer || "-"} />
-                </div>
-              </div>
-
-              <div className="mt-12 flex justify-center items-center gap-4">
-                <button
-                  onClick={handleReset}
-                  className="flex items-center gap-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold py-3 px-6 rounded-lg transition-colors shadow-sm"
-                >
-                  <RotateCcw size={18} /> Diagnosis Ulang
-                </button>
-                <button
-                  onClick={handleExportPDF}
-                  className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors shadow-sm"
-                  disabled={exporting}
-                >
-                  <Download size={18} />{" "}
-                  {exporting ? "Exporting..." : "Export to PDF"}
-                </button>
-              </div>
-            </div>
-          )}
-        </main>
+                )}
+              </main>
+            }
+          />
+        </Routes>
       </motion.div>
     </>
   );
