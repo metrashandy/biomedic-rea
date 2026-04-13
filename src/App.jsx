@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
-import RecordDetail from './pages/RecordDetail';
-import PatientDetail from './pages/PatientDetail';
+import RecordDetail from "./pages/RecordDetail";
+import PatientDetail from "./pages/PatientDetail";
 import PatientList from "./pages/PatientList"; // Import file yang baru kita buat
 import { useDropzone } from "react-dropzone";
 import jsPDF from "jspdf";
@@ -118,7 +118,7 @@ function App() {
         toast.error(data.error);
         return;
       }
-      if (!data.result || !data.result.analysis) {
+      if (!data.result || !data.result.findings) {
         setResult(null);
         toast.error("Gambar tidak dapat dianalisis (bukan X-ray)");
         return;
@@ -312,43 +312,22 @@ function App() {
       };
 
       sectionTitle("1. Temuan");
-      addWrappedText(result?.result?.analysis?.findings || "-");
+      addWrappedText(result?.result?.findings || "-");
       sectionTitle("2. Potensi Kelainan");
-      addWrappedText(result?.result?.analysis?.potential_abnormalities || "-");
-      sectionTitle("3. Observasi");
-      addWrappedText(result?.result?.analysis?.observations || "-");
-      sectionTitle("4. Tingkat Risiko");
-      addWrappedText(
-        `Overall Risk : ${result?.result?.risk_assessment?.overall_health_risk_percentage ?? "-"}%`,
-      );
+      addWrappedText(result?.result?.abnormality || "-");
+      sectionTitle("3. Tingkat Risiko");
+      addWrappedText(`Overall Risk : ${result?.result?.risk ?? "-"}%`);
       addWrappedText(
         result?.result?.risk_assessment?.assessment_explanation || "-",
       );
-      sectionTitle("5. Penilaian Teknis");
+      sectionTitle("4. Rekomendasi Pengobatan");
       addWrappedText(
-        `Positioning : ${result?.result?.technical_assessment?.positioning || "-"}`,
+        `General Approach : ${result?.result?.recommendation?.approach || "-"}`,
       );
       addWrappedText(
-        `Exposure    : ${result?.result?.technical_assessment?.exposure || "-"}`,
+        `Possible Treatments : ${result?.result?.recommendation?.treatment || "-"}`,
       );
-      addWrappedText(
-        `Artifacts   : ${result?.result?.technical_assessment?.artifacts || "-"}`,
-      );
-      sectionTitle("6. Interpretasi Klinis");
-      addWrappedText(result?.result?.specific_response || "-");
-      sectionTitle("7. Rekomendasi Pengobatan");
-      addWrappedText(
-        `General Approach : ${result?.result?.treatment_recommendations?.general_approach || "-"}`,
-      );
-      addWrappedText(
-        `Possible Treatments : ${result?.result?.treatment_recommendations?.possible_treatments || "-"}`,
-      );
-      addWrappedText(
-        `Follow Up : ${result?.result?.treatment_recommendations?.follow_up || "-"}`,
-      );
-      sectionTitle("8. Rekomendasi Secara Umum");
-      addWrappedText(result?.result?.recommendations || "-");
-      sectionTitle("9. Disclaimer");
+      sectionTitle("5. Disclaimer");
       addWrappedText(result?.result?.disclaimer || "-", {
         fontSize: 9,
         color: [120, 120, 120],
@@ -489,8 +468,8 @@ function App() {
         <Routes>
           {/* Route 1: Halaman Daftar Pasien */}
           <Route path="/patients" element={<PatientList />} />
-           <Route path="/patient/:id" element={<PatientDetail />} />
-           <Route path="/record/:recordId" element={<RecordDetail />} />
+          <Route path="/patient/:id" element={<PatientDetail />} />
+          <Route path="/record/:recordId" element={<RecordDetail />} />
 
           <Route
             path="/"
@@ -594,7 +573,7 @@ function App() {
                   </div>
                 </div>
 
-                {result?.result?.analysis && (
+                {result?.result?.findings && (
                   <div ref={resultsRef} className="mt-16 animate-fade-in">
                     <div className="text-center mb-10">
                       <h2 className="text-3xl font-bold text-slate-800">
@@ -707,31 +686,21 @@ function App() {
                       <ResultCard
                         icon={<FileText />}
                         title="Temuan Klinis"
-                        content={result?.result?.analysis?.findings || "-"}
+                        content={result?.result?.findings || "-"}
                       />
                       <ResultCard
                         icon={<AlertTriangle className="text-orange-500" />}
                         title="Potensi Kelainan"
-                        content={
-                          result?.result?.analysis?.potential_abnormalities ||
-                          "-"
-                        }
+                        content={result?.result?.abnormality || "-"}
                       />
-                      <RiskCard
-                        percentage={
-                          result?.result?.risk_assessment
-                            ?.overall_health_risk_percentage || 0
-                        }
-                      />
+                      <RiskCard percentage={result?.result?.risk || 0} />
                       <ResultCard
                         icon={<Pill className="text-green-500" />}
                         title="Rekomendasi Pengobatan"
-                        content={`Approach: ${result?.result?.treatment_recommendations?.general_approach || "-"}\nTreatment: ${result?.result?.treatment_recommendations?.possible_treatments || "-"}`}
+                        content={`Approach: ${result?.result?.recommendation?.approach || "-"}\nTreatment: ${result?.result?.recommendation?.treatment || "-"}`}
                       />
                       <div className="md:col-span-2">
-                        <DisclaimerCard
-                          content={result?.result?.disclaimer || "-"}
-                        />
+                        <DisclaimerCard content="Hasil ini dihasilkan oleh AI dan tidak menggantikan diagnosis medis profesional." />
                       </div>
                     </div>
 

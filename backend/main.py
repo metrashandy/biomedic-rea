@@ -1,23 +1,24 @@
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
-import requests
 from fastapi.middleware.cors import CORSMiddleware
 import os
-from dotenv import load_dotenv
-from typing import Optional
-from deep_translator import GoogleTranslator
+import re
+import json
 import torch
 import numpy as np
 import cv2
 import base64
+from dotenv import load_dotenv
+from typing import Optional
+from deep_translator import GoogleTranslator
+from openai import OpenAI
 
 # ================== IMPORT HUGGING FACE ==================
 from transformers import AutoModel
 
 # ================== LOAD ENV ==================
 load_dotenv()
-
-RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
-RAPIDAPI_HOST = "ai-radiology-reporting-x-ray-interpretation-api.p.rapidapi.com"
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+print("API KEY:", os.getenv("OPENAI_API_KEY"))
 
 # ================== INIT APP ==================
 app = FastAPI()
@@ -36,6 +37,11 @@ print("Loading Hugging Face Model...")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 hf_model = AutoModel.from_pretrained("ianpan/chest-x-ray-basic", trust_remote_code=True)
 hf_model = hf_model.eval().to(device)
+hf_model = AutoModel.from_pretrained(
+    "ianpan/chest-x-ray-basic",
+    trust_remote_code=True,
+    ignore_mismatched_sizes=True
+)
 print("Model loaded successfully!")
 
 # ================== FUNGSI BANTUAN ==================
@@ -129,9 +135,10 @@ def process_huggingface_image(image_bytes):
 async def analyze_xray(
     image: UploadFile = File(...),
     symptoms: Optional[str] = Form(None)
+    
 ):
-    if not RAPIDAPI_KEY:
-        raise HTTPException(status_code=500, detail="API key tidak ditemukan")
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(status_code=500, detail="OpenAI API key tidak ditemukan")
 
     allowed_types = ["image/jpeg", "image/png"]
     if image.content_type not in allowed_types:
@@ -144,30 +151,73 @@ async def analyze_xray(
     # ================== 1. PROSES LOKAL (HUGGING FACE) ==================
     hf_data = process_huggingface_image(contents)
 
-    # ================== 2. REQUEST KE RAPID API ==================
-    url = "https://ai-radiology-reporting-x-ray-interpretation-api.p.rapidapi.com/check"
-    headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": RAPIDAPI_HOST}
-    
-    # Gabungkan prediksi AI lokal ke dalam prompt API teks agar analisanya lebih akurat!
-    translated_symptoms = translate_to_english(symptoms) if symptoms else "None"
-    smart_prompt = f"Analyze this X-ray. Patient is a {hf_data['age']} years old {hf_data['gender']}, View: {hf_data['view']}, CTR ratio is {hf_data['ctr']}. Symptoms: {translated_symptoms}"
+    # ================== 2. REQUEST KE OPENAI ==================
 
-    params = {"language": "en", "message": smart_prompt, "noqueue": "1"}
-    files = {"image": (image.filename, contents, image.content_type)}
+
+    # encode image ke base64
+    image_base64 = base64.b64encode(contents).decode("utf-8")
+
+    translated_symptoms = translate_to_english(symptoms) if symptoms else "None"
+
+    prompt = f"""
+    Analyze this chest X-ray image and describe visible findings.
+
+    Focus only on visual patterns. Do not provide a medical diagnosis.
+
+    Return STRICT JSON:
+
+    {{
+    "findings": "...",
+    "abnormality": "...",
+    "risk": 0-100,
+    "recommendation": {{
+        "approach": "...",
+        "treatment": "..."
+    }}
+    }}
+    """
+
+    response = client.responses.create(
+        model="gpt-5.4-mini",
+        input=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": prompt},
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:image/jpeg;base64,{image_base64}"
+                    }
+                ]
+            }
+        ],
+        temperature=0.3
+    )
 
     try:
-        response = requests.post(url, headers=headers, files=files, params=params, timeout=20)
-    except requests.exceptions.RequestException:
-        raise HTTPException(status_code=500, detail="Gagal terhubung ke API eksternal")
+        content = response.output[0].content[0].text
 
-    if response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail="API radiologi gagal memproses data")
+        content = re.sub(r"```json|```", "", content).strip()
+        print("RAW AI:", content)
+        ai_result = json.loads(content)
 
-    data = response.json()
+        if "findings" not in ai_result:
+            raise HTTPException(status_code=500, detail="Format AI tidak sesuai")
+
+    except json.JSONDecodeError:
+        print("RAW AI RESPONSE:", content)
+        raise HTTPException(status_code=500, detail="Format JSON dari AI tidak valid")
+
+    except Exception as e:
+        print("ERROR:", str(e))
+        raise HTTPException(status_code=500, detail="Terjadi kesalahan saat memproses AI")
 
     # ================== 3. GABUNGKAN HASIL & TRANSLATE ==================
     
     # Masukkan hasil segmentasi HF ke JSON response
+    data = {
+    "result": ai_result
+    }
     data["segmentation_image"] = hf_data["image_base64"]
     data["ai_metadata"] = {
         "age": hf_data["age"],
