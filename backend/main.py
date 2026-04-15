@@ -131,29 +131,100 @@ async def analyze_xray(
     image_base64 = base64.b64encode(contents).decode("utf-8")
 
     prompt = """
-    Analyze this chest X-ray image. Focus only on visible patterns (opacity, asymmetry, density differences). Do NOT provide a medical diagnosis. Identify ALL suspicious regions if visible. Return multiple bounding boxes if needed. If no clear abnormality is visible, return empty list.
-    Identify ALL suspicious regions if visible.
+    Analyze this chest X-ray image.
 
-    Each bounding box MUST:
-    - tightly fit the abnormal region
-    - avoid including healthy areas
-    - be as small as possible while covering the abnormality
+    Focus only on visible patterns:
+    - opacity
+    - asymmetry
+    - density differences
 
-    Do NOT create large boxes covering the center unless absolutely necessary.
+    Rules:
+    - Do NOT provide a medical diagnosis
+    - Detect ALL suspicious regions (if any)
+    - If no abnormality: return empty bboxes []
+    
+    Findings rules:
+    - Write detailed radiology-style description
+    - Mention:
+    - location (left/right, upper/middle/lower zone)
+    - pattern (linear, patchy, diffuse)
+    - severity (mild/moderate/severe)
+    - Minimum 2–4 sentences
+    
+    Important:
+    - Focus ONLY on lung fields
+    - Ignore heart (cardiac silhouette), bones, and diaphragm
+    - Do NOT mark the heart area as abnormal
+    - Only consider abnormalities inside lung regions
+    
+    Normal case rule:
+    - If no clear abnormality is visible:
+    - Findings must clearly state lungs appear normal
+    - Do NOT describe subtle or uncertain patterns
+    - Abnormality must be "No significant abnormality"
+    - Recommendation should be simple reassurance + monitoring
 
-Coordinates must be normalized between 0 and 1.
-    Return STRICT JSON:
+    Abnormality rules:
+    - Be specific (e.g. "right basilar linear opacity", not just "opacity")
+
+    Recommendation rules:
+    - Provide 3-4 sentences
+    - MUST vary based on risk level:
+
+    If risk is LOW (0–30):
+    - Focus on reassurance
+    - Suggest monitoring only
+    - Do NOT suggest radiologist validation
+    - Do NOT suggest urgent evaluation
+
+    If risk is MEDIUM (31–70):
+    - Suggest follow-up imaging if symptoms persist
+    - Mention clinical correlation
+
+    If risk is HIGH (>70):
+    - Suggest prompt clinical evaluation
+    - May include specialist (radiologist) if needed
+
+    - Use professional medical tone
+    - Avoid generic answers
+    
+    Bounding boxes:
+    - Must be tight and minimal
+    - Avoid healthy areas
+    - Maximum 5 boxes
+    - Coordinates normalized (0–1)
+
+    Risk estimation:
+    - Based on:
+    - affected area
+    - number of regions
+    - opacity intensity (low/medium/high)
+    - Provide simple explainable calculation
+
+    Recommendation:
+    - Always provide clinically meaningful advice
+    - Vary based on risk:
+    - Low → monitoring & prevention
+    - Medium → follow-up imaging
+    - High → urgent evaluation
+    - Use professional radiology tone
+    - Do NOT say "cannot determine"
+
+    Output:
+    Return ONLY valid JSON. No explanation, no markdown.
+
     {
     "findings": "...",
     "abnormality": "...",
     "risk": 0-100,
+    "risk_factors": {
+        "area": "...",
+        "region_count": "...",
+        "intensity": "...",
+        "calculation": "..."
+    },
     "bboxes": [
-        {
-        "x": 0-1,
-        "y": 0-1,
-        "width": 0-1,
-        "height": 0-1
-        }
+        {"x": 0-1, "y": 0-1, "width": 0-1, "height": 0-1}
     ],
     "recommendation": {
         "approach": "...",
@@ -161,6 +232,10 @@ Coordinates must be normalized between 0 and 1.
     }
     }
     """
+    if symptoms:
+        symptoms_en = translate_to_english(symptoms)
+        prompt += f"\nPatient symptoms: {symptoms_en}\n"
+    
     response = client.responses.create(
         model="gpt-5.4-mini",
         input=[
@@ -185,9 +260,48 @@ Coordinates must be normalized between 0 and 1.
         print("RAW AI:", content)
 
         ai_result = json.loads(content)
+        
+        if "risk_factors" not in ai_result:
+            ai_result["risk_factors"] = {
+                "area": "-",
+                "region_count": "-",
+                "intensity": "-",
+                "calculation": "Tidak tersedia"
+            }
+        
+        ai_result["findings"] = translate_text(ai_result.get("findings"))
+        ai_result["abnormality"] = translate_text(ai_result.get("abnormality"))
 
-        if "findings" not in ai_result:
-            raise HTTPException(status_code=500, detail="Format AI tidak sesuai")
+        ai_result["recommendation"]["approach"] = translate_text(
+            ai_result["recommendation"].get("approach")
+        )
+
+        ai_result["recommendation"]["treatment"] = translate_text(
+            ai_result["recommendation"].get("treatment")
+        )
+
+        # optional (biar lengkap)
+        ai_result["risk_factors"]["calculation"] = translate_text(
+            ai_result["risk_factors"].get("calculation")
+        )
+        
+        ai_result["risk_factors"]["area"] = translate_text(
+        ai_result["risk_factors"].get("area")
+)
+
+        ai_result["risk_factors"]["region_count"] = translate_text(
+            str(ai_result["risk_factors"].get("region_count"))
+        )
+
+        ai_result["risk_factors"]["intensity"] = translate_text(
+            ai_result["risk_factors"].get("intensity")
+        )
+
+        required_keys = ["findings", "abnormality", "risk", "bboxes", "recommendation"]
+
+        for key in required_keys:
+            if key not in ai_result:
+                raise HTTPException(status_code=500, detail=f"{key} tidak ada di response AI")
 
     except Exception as e:
         print("ERROR:", str(e))

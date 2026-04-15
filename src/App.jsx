@@ -32,7 +32,7 @@ function App() {
   const [exporting, setExporting] = useState(false);
   const [showApp, setShowApp] = useState(false);
   const resultsRef = useRef(null);
-
+  const risk = Number(result?.result?.risk) || 0;
   const resetForm = () => {
     setSelectedFile(null);
     setImagePreview(null);
@@ -312,6 +312,13 @@ function App() {
       addWrappedText(result?.result?.abnormality || "-");
       sectionTitle("3. Tingkat Risiko");
       addWrappedText(`Overall Risk : ${result?.result?.risk ?? "-"}%`);
+      addWrappedText(
+        `Perhitungan:\n` +
+          `Area: ${result?.result?.risk_factors?.area || "-"}\n` +
+          `Region: ${result?.result?.risk_factors?.region_count || "-"}\n` +
+          `Intensitas: ${result?.result?.risk_factors?.intensity || "-"}\n` +
+          `→ ${result?.result?.risk_factors?.calculation || "-"}`,
+      );
       sectionTitle("4. Rekomendasi Pengobatan");
       addWrappedText(
         `Approach : ${result?.result?.recommendation?.approach || "-"}`,
@@ -321,7 +328,8 @@ function App() {
       );
       sectionTitle("5. Disclaimer");
       addWrappedText(
-        result?.result?.disclaimer || "Laporan AI. Butuh validasi dokter.",
+        result?.result?.disclaimer ||
+          "Analisis ini disediakan oleh sistem AI dan tidak boleh menggantikan diagnosis medis profesional. Persentase risiko dan rekomendasi pengobatan hanyalah perkiraan dan saran umum. Pasien harus berkonsultasi dengan penyedia layanan kesehatan yang berkualifikasi untuk mendapatkan nasihat, diagnosis, dan pengobatan medis yang tepat.",
         { fontSize: 9, color: [120, 120, 120] },
       );
 
@@ -349,7 +357,8 @@ function App() {
         { x: 0, y: 0, width: 1, height: 1 },
       ],
       recommendation: { approach: "Antibiotics", treatment: "Amoxicillin" },
-      disclaimer: "AI generated result.",
+      disclaimer:
+        "Analisis ini disediakan oleh sistem AI dan tidak boleh menggantikan diagnosis medis profesional. Persentase risiko dan rekomendasi pengobatan hanyalah perkiraan dan saran umum. Pasien harus berkonsultasi dengan penyedia layanan kesehatan yang berkualifikasi untuk mendapatkan nasihat, diagnosis, dan pengobatan medis yang tepat.",
     },
   };
 
@@ -675,9 +684,7 @@ function App() {
                               <span className="text-slate-500 text-sm flex items-center gap-1">
                                 <AlertTriangle size={14} /> Status Visual
                               </span>
-                              <p
-                                className={`font-bold text-lg mt-1 ${result?.result?.bboxes?.length > 0 ? "text-red-600" : "text-green-600"}`}
-                              >
+                              <p className="font-bold text-lg text-slate-800 mt-1">
                                 {result?.result?.bboxes?.length > 0
                                   ? "Suspect Abnormal"
                                   : "Tampak Bersih"}
@@ -701,8 +708,10 @@ function App() {
                               <span className="text-slate-500 text-sm flex items-center gap-1">
                                 <User size={14} /> Tindak Lanjut
                               </span>
-                              <p className="font-bold text-lg text-slate-800 mt-1">
-                                Validasi Radiolog
+                              <p
+                                className={`font-bold ${getActionColor(risk)}`}
+                              >
+                                {getAction(risk)}
                               </p>
                             </div>
                           </div>
@@ -727,7 +736,10 @@ function App() {
                         title="Potensi Kelainan"
                         content={result?.result?.abnormality || "-"}
                       />
-                      <RiskCard percentage={result?.result?.risk || 0} />
+                      <RiskCard
+                        percentage={result?.result?.risk || 0}
+                        factors={result?.result?.risk_factors}
+                      />
                       <ResultCard
                         icon={<Pill className="text-green-500" />}
                         title="Rekomendasi Pengobatan"
@@ -778,7 +790,7 @@ const ResultCard = ({ icon, title, content }) => (
   </div>
 );
 
-const RiskCard = ({ percentage }) => {
+const RiskCard = ({ percentage, factors }) => {
   const safePercentage = Number(percentage) || 0;
   const riskColor =
     safePercentage > 70
@@ -807,8 +819,37 @@ const RiskCard = ({ percentage }) => {
       <p className={`mt-2 font-bold text-2xl ${riskTextColor}`}>
         {safePercentage}%
       </p>
+      {factors && (
+        <div className="mt-4 text-sm text-slate-600 space-y-1">
+          <p>
+            <b>Perhitungan:</b>
+          </p>
+          <p>• Area: {factors?.area || "-"}</p>
+          <p>• Jumlah area: {factors?.region_count || "-"}</p>
+          <p>• Intensitas: {factors?.intensity || "-"}</p>
+          <p className="italic text-slate-500">
+            → {factors?.calculation || "-"}
+          </p>
+        </div>
+      )}
     </div>
   );
+};
+
+const getAction = (risk) => {
+  const r = Number(risk) || 0;
+
+  if (r > 70) return "Perlu Evaluasi Medis Segera";
+  if (r > 30) return "Disarankan Pemantauan Klinis";
+  return "Cukup Observasi dan Pencegahan";
+};
+
+const getActionColor = (risk) => {
+  const r = Number(risk) || 0;
+
+  if (r > 70) return "text-red-600";
+  if (r > 30) return "text-yellow-600";
+  return "text-green-600";
 };
 
 const DisclaimerCard = ({ content }) => (
