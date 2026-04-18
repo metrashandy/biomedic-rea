@@ -107,8 +107,10 @@ def draw_boxes(image, boxes):
 @app.post("/analyze")
 async def analyze_xray(
     image: UploadFile = File(...),
-    symptoms: Optional[str] = Form(None)
-):
+    symptoms: Optional[str] = Form(None),
+    analysis_type: Optional[str] = Form("xray")  # ✅ TAMBAHKAN INI
+):  
+    
     if not os.getenv("OPENAI_API_KEY"):
         raise HTTPException(status_code=500, detail="OpenAI API key tidak ditemukan")
 
@@ -130,87 +132,136 @@ async def analyze_xray(
     # ================== OPENAI ==================
     image_base64 = base64.b64encode(contents).decode("utf-8")
 
-    prompt = """
+    prompt_xray = """
     Analyze this chest X-ray image.
 
-    Focus only on visible patterns:
-    - opacity
-    - asymmetry
-    - density differences
+    Focus ONLY on lung fields.
 
-    Rules:
-    - Do NOT provide a medical diagnosis
-    - Detect ALL suspicious regions (if any)
-    - If no abnormality: return empty bboxes []
-    
-    Findings rules:
-    - Write detailed radiology-style description
-    - Mention:
+    Do NOT analyze:
+    - heart (cardiac silhouette)
+    - bones
+    - diaphragm
+
+    ------------------------
+    TASK
+    ------------------------
+    1. Identify visible abnormalities in lung regions
+    2. Describe findings in professional radiology style
+    3. Estimate risk level
+    4. Suggest most likely disease (NOT definitive diagnosis)
+    5. Provide clinical recommendation
+
+    ------------------------
+    FINDINGS RULES
+    ------------------------
+    - Write in detailed radiology narrative style
+    - Minimum 3–5 sentences
+    - Must read like a professional radiology report
+    - Include:
     - location (left/right, upper/middle/lower zone)
     - pattern (linear, patchy, diffuse)
     - severity (mild/moderate/severe)
-    - Minimum 2–4 sentences
+    - Explain findings clearly (not bullet-like)
+    - Use natural medical language flow
+
+    Normal case:
+    - Clearly state lungs appear normal
+    - Avoid uncertain or speculative language
     
-    Important:
-    - Focus ONLY on lung fields
-    - Ignore heart (cardiac silhouette), bones, and diaphragm
-    - Do NOT mark the heart area as abnormal
-    - Only consider abnormalities inside lung regions
-    
-    Normal case rule:
-    - If no clear abnormality is visible:
-    - Findings must clearly state lungs appear normal
-    - Do NOT describe subtle or uncertain patterns
-    - Abnormality must be "No significant abnormality"
-    - Recommendation should be simple reassurance + monitoring
+    - Use semi-technical language (mix of medical + easy explanation)
+    - Avoid overly complex terminology
+    - Make it understandable for non-medical users
 
-    Abnormality rules:
-    - Be specific (e.g. "right basilar linear opacity", not just "opacity")
+    ABNORMALITY RULES:
+    - Must list 1–3 most likely diseases
+    - Use numbered format:
 
-    Recommendation rules:
-    - Provide 3-4 sentences
-    - MUST vary based on risk level:
+    Example:
+    1. Pneumonia (infeksi paru-paru)
+    → Penjelasan sederhana
 
-    If risk is LOW (0–30):
-    - Focus on reassurance
-    - Suggest monitoring only
-    - Do NOT suggest radiologist validation
-    - Do NOT suggest urgent evaluation
+    2. Tuberculosis (TBC)
+    → Penjelasan sederhana
 
-    If risk is MEDIUM (31–70):
-    - Suggest follow-up imaging if symptoms persist
-    - Mention clinical correlation
+    - Each disease must include:
+    - medical name
+    - simple explanation in layman terms (Indonesian-friendly)
 
-    If risk is HIGH (>70):
-    - Suggest prompt clinical evaluation
-    - May include specialist (radiologist) if needed
+    - Avoid technical terms without explanation
+    - If using medical terms (e.g. atelectasis), MUST explain meaning in simple language
 
-    - Use professional medical tone
-    - Avoid generic answers
-    
-    Bounding boxes:
+    - If normal:
+    "Tidak ditemukan kelainan yang signifikan pada paru-paru"
+    ------------------------
+    BOUNDING BOX RULES
+    ------------------------
+    - Detect ALL suspicious regions
+    - Maximum 5 boxes
     - Must be tight and minimal
     - Avoid healthy areas
-    - Maximum 5 boxes
     - Coordinates normalized (0–1)
+    - If normal: return empty []
 
-    Risk estimation:
+    ------------------------
+    RISK ESTIMATION
+    ------------------------
+    - Range: 0–100
     - Based on:
     - affected area
     - number of regions
     - opacity intensity (low/medium/high)
-    - Provide simple explainable calculation
+    - Provide simple explainable reasoning
 
-    Recommendation:
-    - Always provide clinically meaningful advice
-    - Vary based on risk:
-    - Low → monitoring & prevention
-    - Medium → follow-up imaging
-    - High → urgent evaluation
-    - Use professional radiology tone
-    - Do NOT say "cannot determine"
+    ------------------------
+    RECOMMENDATION RULES
+    ------------------------
+    - Write in natural, patient-friendly clinical explanation
+    - Avoid overly formal or textbook language
+    - Must feel like a doctor explaining to a patient
 
-    Output:
+    Structure:
+    - Use 2 parts:
+    1. Approach (penjelasan kondisi & langkah selanjutnya)
+    2. Treatment (opsi penanganan)
+
+    Style:
+    - Use simple and clear language
+    - Avoid phrases like:
+    "korelasi klinis dianjurkan"
+    "penatalaksanaan harus dipandu"
+    - Replace with more natural explanations
+
+    Content:
+    - Explain what might be happening in the body
+    - Explain what the patient should do next
+    - Give practical and understandable advice
+
+    Length:
+    - Each part must be 2–3 sentences
+    - Total should feel explanatory, not robotic
+
+    Risk-based behavior:
+
+    LOW RISK:
+    - Reassure the user
+    - Suggest monitoring only
+    - No urgent tone
+
+    MEDIUM RISK:
+    - Suggest follow-up if symptoms persist
+    - Explain why monitoring is needed
+
+    HIGH RISK:
+    - Suggest immediate medical attention
+    - Explain possible seriousness clearly
+
+    Tone:
+    - Calm, informative, and helpful
+    - Not too technical, not too casual
+
+    ------------------------
+    OUTPUT FORMAT
+    ------------------------
     Return ONLY valid JSON. No explanation, no markdown.
 
     {
@@ -232,6 +283,102 @@ async def analyze_xray(
     }
     }
     """
+    
+    
+    prompt_fundus = """
+    Analyze this retinal fundus image.
+
+    Focus on retinal abnormalities including:
+    - microaneurysms (small red dots)
+    - hemorrhages (dark red patches)
+    - exudates (yellow-white deposits)
+    - cotton wool spots (soft white lesions)
+    - abnormal blood vessels (tortuosity, neovascularization)
+    - macula abnormalities
+
+    Rules:
+    - Do NOT provide a definitive medical diagnosis
+    - Detect ALL suspicious retinal lesions
+    - If normal: return empty bboxes []
+
+    Findings rules:
+    - Write in detailed clinical narrative style (ophthalmology)
+    - Minimum 3–5 sentences
+    - Include:
+    - location (central, peripheral, macula, optic disc area)
+    - lesion type (microaneurysm, hemorrhage, exudate, etc)
+    - severity (mild/moderate/severe)
+    - Avoid short or fragmented sentences
+
+    Normal case rule:
+    - Clearly state retina appears normal
+    - No abnormalities detected
+
+    Abnormality rules:
+    - MUST include possible disease name:
+    Examples:
+    - diabetic retinopathy
+    - hypertensive retinopathy
+    - macular degeneration
+    - retinal hemorrhage
+
+    Format:
+    - "Possible diabetic retinopathy"
+    - "Possible hypertensive retinopathy, consider macular edema"
+
+    Bounding boxes:
+    - Tight around lesions
+    - Max 5 boxes
+    - Coordinates normalized (0–1)
+
+    Risk estimation:
+    - Based on:
+    - number of lesions
+    - spread (localized/diffuse)
+    - severity of lesions
+    - Provide explainable calculation
+
+    Recommendation rules:
+    - Low risk → monitoring
+    - Medium → ophthalmology follow-up
+    - High → urgent evaluation
+
+    Output:
+    Return ONLY valid JSON.
+
+    {
+    "findings": "...",
+    "abnormality": "...",
+    "risk": 0-100,
+    "risk_factors": {
+        "lesion_count": "...",
+        "spread": "...",
+        "severity": "...",
+        "calculation": "..."
+    },
+    "bboxes": [
+        {"x": 0-1, "y": 0-1, "width": 0-1, "height": 0-1}
+    ],
+    "recommendation": {
+        "approach": "...",
+        "treatment": "..."
+    }
+    }
+    """
+    
+    
+    prompt_ct = """
+    test
+    """
+    
+    if analysis_type == "xray":
+        prompt = prompt_xray
+    elif analysis_type == "fundus":
+        prompt = prompt_fundus
+    elif analysis_type == "ct":
+        prompt = prompt_ct
+    else:
+        prompt = prompt_xray  # fallback
     if symptoms:
         symptoms_en = translate_to_english(symptoms)
         prompt += f"\nPatient symptoms: {symptoms_en}\n"
@@ -314,32 +461,39 @@ async def analyze_xray(
 
     # ================== BBOX ==================
     bboxes = ai_result.get("bboxes", [])
-    
+
     if not bboxes:
         print("AI tidak mendeteksi area abnormal")
 
     overlay = np.array(pil_image)
 
-    refined_boxes = refine_bbox_with_opencv(overlay, bboxes)
+    # ✅ HANYA UNTUK XRAY
+    if analysis_type == "xray":
+        refined_boxes = refine_bbox_with_opencv(overlay, bboxes)
+    else:
+        refined_boxes = []
 
+    # ================= DRAW =================
     if refined_boxes:
         overlay = draw_boxes(overlay, refined_boxes)
     else:
         print("Fallback ke bbox AI")
 
-        h, w, _ = overlay.shape
+    h, w, _ = overlay.shape
 
-        for bbox in bboxes:
-            x = int(bbox["x"] * w)
-            y = int(bbox["y"] * h)
-            bw = int(bbox["width"] * w)
-            bh = int(bbox["height"] * h)
+    for bbox in bboxes:
+        x = int(bbox["x"] * w)
+        y = int(bbox["y"] * h)
+        bw = int(bbox["width"] * w)
+        bh = int(bbox["height"] * h)
 
-            overlay = draw_boxes(overlay, [(x, y, bw, bh)])
+        overlay = draw_boxes(overlay, [(x, y, bw, bh)])
+            
 
     # ================== FINAL ==================
+    overlay = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)
     base64_img = to_base64(overlay)
-
+    
     # ================== RETURN ==================
     return {
         "result": ai_result,
