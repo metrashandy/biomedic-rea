@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Search, ChevronRight, ChevronLeft } from 'lucide-react';
 import { motion } from 'framer-motion';
+import Header from '../components/Header';
 
 // ===== DATA DUMMY PASIEN (Diperbanyak untuk test pagination) =====
 const dummyPatients = Array.from({ length: 25 }, (_, i) => ({
@@ -43,11 +44,15 @@ export default function PatientList() {
   };
 
   return (
+     <div className="min-h-screen bg-sky-50"> 
+      {/* ===== TAMBAHKAN HEADER DI SINI ===== */}
+      <Header />
     <motion.div 
       initial={{ opacity: 0, y: 20 }} 
       animate={{ opacity: 1, y: 0 }} 
       className="max-w-6xl mx-auto px-6 py-12"
     >
+      
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
           <h2 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
@@ -157,5 +162,6 @@ export default function PatientList() {
       </div>
       
     </motion.div>
+    </div>
   );
 }

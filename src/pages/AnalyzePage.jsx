@@ -1,12 +1,19 @@
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Scan } from "lucide-react";
+import { Scan, Filter } from "lucide-react";
 import toast from "react-hot-toast";
 import { exportToPDF } from "../services/pdfExport";
 
 import Header from "../components/Header";
 import UploadForm from "../components/UploadForm";
 import ResultSection from "../components/ResultSection";
+
+// ===== DAFTAR KATEGORI =====
+const CATEGORIES = [
+  "Retina Scan",
+  "CT Scan",
+  "X-Ray",
+];
 
 export default function AnalyzePage() {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -15,7 +22,7 @@ export default function AnalyzePage() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [analysisType, setAnalysisType] = useState("xray");
+  const [analysisType, setAnalysisType] = useState("X-Ray"); // Default ke X-Ray
 
   const resultsRef = useRef(null);
 
@@ -41,7 +48,6 @@ export default function AnalyzePage() {
       toast.error("Silakan upload gambar terlebih dahulu");
       return;
     }
-
     setLoading(true);
     setResult(null);
 
@@ -55,11 +61,7 @@ export default function AnalyzePage() {
         method: "POST",
         body: formData,
       });
-
-      if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
-      }
-
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
       const data = await response.json();
 
       if (data.error) {
@@ -67,20 +69,16 @@ export default function AnalyzePage() {
         setLoading(false);
         return;
       }
-
       if (!data.result || !data.result.findings) {
         setResult(null);
-        toast.error("Gambar tidak dapat dianalisis (bukan X-ray)");
+        toast.error("Gambar tidak dapat dianalisis");
         setLoading(false);
         return;
       }
-
       setResult(data);
     } catch (error) {
-      console.error("Error connecting to backend:", error);
-      toast.error(
-        "Gagal terhubung ke server. Pastikan backend Python sudah berjalan!",
-      );
+      console.error(error);
+      toast.error("Gagal terhubung ke server.");
       setLoading(false);
     } finally {
       setLoading(false);
@@ -93,11 +91,7 @@ export default function AnalyzePage() {
   };
 
   const handleExportPDF = async () => {
-    if (!result || !selectedFile) {
-      toast.error("Data belum lengkap");
-      return;
-    }
-
+    if (!result || !selectedFile) return;
     try {
       setExporting(true);
       await exportToPDF(
@@ -109,27 +103,21 @@ export default function AnalyzePage() {
       );
       toast.success("PDF berhasil dibuat!");
     } catch (error) {
-      console.error(error);
       toast.error("Gagal export PDF");
     } finally {
       setExporting(false);
     }
   };
 
-  // ===== DATA DUMMY =====
   const dummyResult = {
     segmentation_image: "",
     result: {
       findings: "Terdapat pola konsolidasi pada lapang paru...",
       abnormality: "Possible pneumonia",
       risk: 75,
-      bboxes: [
-        { x: 0, y: 0, width: 1, height: 1 },
-        { x: 0, y: 0, width: 1, height: 1 },
-      ],
+      bboxes: [{ x: 0, y: 0, width: 1, height: 1 }],
       recommendation: { approach: "Antibiotics", treatment: "Amoxicillin" },
-      disclaimer:
-        "Analisis ini hanya simulasi dan tidak menggantikan diagnosis medis.",
+      disclaimer: "Analisis ini hanya simulasi.",
     },
   };
 
@@ -140,6 +128,7 @@ export default function AnalyzePage() {
       setLoading(false);
     }, 2000);
   };
+
   const [doctorBoxes, setDoctorBoxes] = useState([]);
   const [doctorNotes, setDoctorNotes] = useState({
     temuan: "",
@@ -153,43 +142,47 @@ export default function AnalyzePage() {
       <Header onReset={handleReset} />
 
       <motion.div
-        className="max-w-6xl mx-auto px-6 py-16 space-y-6"
+        className="max-w-6xl mx-auto px-6 py-12 space-y-6"
         initial={{ opacity: 0, y: 40 }}
         animate={{ opacity: 1, y: 0 }}
       >
+        {/* ===== BUNGKUS DROPDOWN & UPLOAD DI DALAM max-w-3xl BIAR SEJAJAR ===== */}
         {!loading && !result && (
-          <>
-            <div className="mb-4">
-              <label className="block mb-2 font-medium">Jenis Analisis</label>
+          <div className="max-w-3xl mx-auto">
+            {/* Kotak Dropdown Jenis Pemeriksaan yang Rapi */}
+            <div className="mb-6 flex flex-col md:flex-row items-center justify-between gap-4 bg-sky-100 p-4 rounded-2xl border border-sky-200">
+              <label className="font-bold text-sky-900 flex items-center gap-2 whitespace-nowrap">
+                <Filter size={20} className="text-sky-600" /> Jenis Pemeriksaan:
+              </label>
               <select
                 value={analysisType}
                 onChange={(e) => setAnalysisType(e.target.value)}
-                className="w-full p-2 border rounded"
+                className="bg-white border border-slate-300 text-slate-700 py-2.5 px-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm w-full md:w-72 font-semibold cursor-pointer"
               >
-                <option value="xray">X-Ray Paru</option>
-                <option value="fundus">Fundus Retina</option>
-                <option value="ct">CT Scan</option>
-                <option value="usg">Ultrasound</option>
+                {CATEGORIES.map((cat, idx) => (
+                  <option key={idx} value={cat}>
+                    {cat}
+                  </option>
+                ))}
               </select>
             </div>
-            {/* ===== UPLOAD FORM ===== */}
-            {!loading && !result && (
-              <UploadForm
-                selectedFile={selectedFile}
-                setSelectedFile={setSelectedFile}
-                imagePreview={imagePreview}
-                setImagePreview={setImagePreview}
-                symptoms={symptoms}
-                setSymptoms={setSymptoms}
-                onAnalyze={handleAnalyze}
-                onReset={handleReset}
-                onTest={handleTestUI}
-              />
-            )}
-          </>
+
+            {/* Form Upload */}
+            <UploadForm
+              selectedFile={selectedFile}
+              setSelectedFile={setSelectedFile}
+              imagePreview={imagePreview}
+              setImagePreview={setImagePreview}
+              symptoms={symptoms}
+              setSymptoms={setSymptoms}
+              onAnalyze={handleAnalyze}
+              onReset={handleReset}
+              onTest={handleTestUI}
+            />
+          </div>
         )}
 
-        {/* ===== LOADING ===== */}
+        {/* LOADING ANIMATION */}
         {loading && (
           <div className="bg-white p-12 rounded-2xl shadow-md border max-w-2xl mx-auto text-center flex flex-col items-center">
             <div className="relative w-24 h-24 mx-auto mb-6">
@@ -200,14 +193,12 @@ export default function AnalyzePage() {
                 size={32}
               />
             </div>
-
             <h2 className="text-2xl font-bold text-slate-800 mb-2">
               Memproses Citra Medis...
             </h2>
             <p className="text-slate-500 mb-6">
               AI sedang menganalisis gambar Anda
             </p>
-
             {imagePreview && (
               <img
                 src={imagePreview}
@@ -218,7 +209,7 @@ export default function AnalyzePage() {
           </div>
         )}
 
-        {/* ===== RESULT ===== */}
+        {/* RESULT SECTION */}
         {result?.result?.findings && (
           <div ref={resultsRef}>
             <ResultSection
@@ -231,6 +222,7 @@ export default function AnalyzePage() {
               doctorBoxes={doctorBoxes}
               doctorNotes={doctorNotes}
               setDoctorNotes={setDoctorNotes}
+              analysisType={analysisType}
             />
           </div>
         )}
