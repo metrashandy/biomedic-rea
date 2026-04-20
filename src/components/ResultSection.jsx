@@ -240,12 +240,6 @@ export default function ResultSection({
               )}
             </div>
 
-            <p className="text-xs text-slate-400 text-center mt-2">
-              {showSegmentation
-                ? "Mode: Segmentasi Aktif"
-                : "Mode: Gambar Asli"}
-            </p>
-
             <button
               onClick={() => setDoctorBoxes([])}
               className="mt-2 w-full text-sm text-red-500 underline text-center"
@@ -255,11 +249,11 @@ export default function ResultSection({
 
             <div className="flex gap-4 mt-4 text-sm font-medium justify-center text-slate-600">
               <span className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-red-600 rounded-sm bg-red-500/20"></div>
-                Area Suspect AI
+                <div className="w-4 h-4 border-2 border-blue-600 rounded-sm bg-blue-500/20"></div>
+                Area Dugaan AI
               </span>
               <span className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-green-500 rounded-sm"></div>
+                <div className="w-4 h-4 border-2 border-green-500 rounded-sm bg-green-500/20"></div>
                 Area Dokter
               </span>
             </div>
@@ -340,11 +334,6 @@ export default function ResultSection({
                 </span>
               </label>
             </div>
-
-            <p className="text-xs text-slate-400 mt-4 italic">
-              *Semakin banyak region terdeteksi, semakin tinggi kemungkinan
-              adanya anomali.
-            </p>
           </div>
         </div>
       </div>
