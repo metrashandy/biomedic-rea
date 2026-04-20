@@ -52,7 +52,7 @@ export default function AnalyzePage() {
       toast.error("Silakan upload gambar terlebih dahulu");
       return;
     }
-    if (!selectedPatientId) { toast.error("Pilih Pasien dulu Bosku!"); return; }
+    if (!selectedPatientId) { toast.error("Pilih Pasien dulu!"); return; }
     setLoading(true);
     setResult(null);
 
