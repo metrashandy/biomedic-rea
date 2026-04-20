@@ -12,6 +12,65 @@ from deep_translator import GoogleTranslator
 from openai import OpenAI
 from PIL import Image
 import io
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from database import SessionLocal, engine
+import models
+from pydantic import BaseModel
+import shutil
+import uuid
+import json
+
+# Perintah ini yang akan mengeksekusi pembuatan file medis.db & tabelnya
+models.Base.metadata.create_all(bind=engine)
+def seed_data():
+    db = SessionLocal()
+    # Tambah 3 Dokter jika kosong
+    if db.query(models.Pemeriksaan).count() == 0: # Cek simpel
+        for i in range(1, 4):
+            # Asumsi lu ada tabel Dokter, kalo nggak ada lewati aja
+            pass 
+
+    # Tambah 10 Pasien jika kosong
+    if db.query(models.Pasien).count() == 0:
+        nama_pasien = ["Budi Santoso", "Siti Aminah", "Ahmad Wijaya", "Rina Kartika", 
+                       "Dewi Lestari", "Eko Prasetyo", "Andi Hermawan", "Sari Maya", 
+                       "Rully Hidayat", "Lina Marlina"]
+        for i, nama in enumerate(nama_pasien):
+            new_p = models.Pasien(no_rm=f"RM-00{i+1}", nama_pasien=nama)
+            db.add(new_p)
+    if db.query(models.Jenis).count() == 0:
+        kategori = ["X-Ray", "MRI", "CT Scan", "Endoscopy", "Ultrasound", "EKG", "EEG"]
+        for k in kategori:
+            db.add(models.Jenis(nama_jenis=k))
+        print("SEED: Kategori pemeriksaan berhasil dibuat.")
+        db.commit()
+    db.close()
+
+
+# ================== INIT APP ==================
+app = FastAPI()
+UPLOAD_DIR = "uploads"
+IMG_DIR = os.path.join(UPLOAD_DIR, "images")
+PDF_DIR = os.path.join(UPLOAD_DIR, "pdfs")
+
+# Otomatis bikin folder kalau belum ada
+os.makedirs(IMG_DIR, exist_ok=True)
+os.makedirs(PDF_DIR, exist_ok=True)
+
+# Mount folder agar bisa diakses public via URL (misal: http://127.0.0.1:8000/uploads/images/foto.jpg)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+# Dependency untuk membuka & menutup sesi database otomatis
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 
 def to_base64(image):
     _, buffer = cv2.imencode('.jpg', image)
@@ -74,14 +133,13 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ================== INIT APP ==================
-app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Mengizinkan semua origin (termasuk localhost:5173)
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Mengizinkan semua method (GET, POST, dll)
+    allow_headers=["*"],  # Mengizinkan semua header
 )
 
 # ================== FUNGSI BANTUAN ==================
@@ -108,7 +166,9 @@ def draw_boxes(image, boxes):
 async def analyze_xray(
     image: UploadFile = File(...),
     symptoms: Optional[str] = Form(None),
-    analysis_type: Optional[str] = Form("xray")  # ✅ TAMBAHKAN INI
+    analysis_type: Optional[str] = Form("xray"),  # ✅ TAMBAHKAN INI
+     id_pasien: int = Form(...), # <--- Tambah ini
+    db: Session = Depends(get_db)
 ):  
     
     if not os.getenv("OPENAI_API_KEY"):
@@ -415,6 +475,34 @@ async def analyze_xray(
                 "intensity": "-",
                 "calculation": "Tidak tersedia"
             }
+
+         # 3. SIMPAN GAMBAR KE FOLDER (Ini yang tadi ilang!)
+        file_ext = image.filename.split(".")[-1]
+        file_name = f"{uuid.uuid4().hex}.{file_ext}"
+        file_path = os.path.join(IMG_DIR, file_name)
+        with open(file_path, "wb") as f:
+            f.write(contents)
+        print(f"✅ File Tersimpan di: {file_path}")
+
+        # 4. SIMPAN KE DATABASE (Tabel Pemeriksaan & Analisis)
+        new_pem = models.Pemeriksaan(id_pasien=id_pasien, no_reg=f"REG-{uuid.uuid4().hex[:6].upper()}", id_dokter=1)
+        db.add(new_pem)
+        db.flush() 
+
+        # Cari ID Jenis (X-Ray, dll)
+        jenis_db = db.query(models.Jenis).filter(models.Jenis.nama_jenis == analysis_type).first()
+        id_j = jenis_db.id_jenis if jenis_db else 1
+
+        new_anal = models.Analisis(
+            id_pemeriksaan=new_pem.id_pemeriksaan,
+            id_jenis=id_j,
+            gambar_asli=file_path,
+            teks_hasil_analisis=json.dumps(ai_result),
+            status="Selesai"
+        )
+        db.add(new_anal)
+        db.commit() # Simpan permanen ke medis.db
+        print(f"✅ Data Tersimpan di DB. Record ID: {new_anal.id_analisis}")
         
         ai_result["findings"] = translate_text(ai_result.get("findings"))
         ai_result["abnormality"] = translate_text(ai_result.get("abnormality"))
@@ -499,3 +587,450 @@ async def analyze_xray(
         "result": ai_result,
         "segmentation_image": base64_img
     }
+
+# Skema Pydantic untuk validasi input Pasien Baru
+class PasienCreate(BaseModel):
+    no_rm: str
+    nama_pasien: str
+
+# 1. API UNTUK NAMBAH PASIEN (CREATE)
+@app.post("/api/patients")
+def create_patient(pasien: PasienCreate, db: Session = Depends(get_db)):
+    # Cek apakah no_rm sudah ada
+    db_pasien = db.query(models.Pasien).filter(models.Pasien.no_rm == pasien.no_rm).first()
+    if db_pasien:
+        raise HTTPException(status_code=400, detail="Nomor RM sudah terdaftar")
+    
+    new_pasien = models.Pasien(
+        no_rm=pasien.no_rm,
+        nama_pasien=pasien.nama_pasien
+    )
+    db.add(new_pasien)
+    db.commit()
+    db.refresh(new_pasien)
+    
+    return {"message": "Pasien berhasil ditambahkan", "data": new_pasien}
+
+# 2. API UNTUK MENGAMBIL LIST SEMUA PASIEN (READ)
+@app.get("/api/patients")
+def get_all_patients(db: Session = Depends(get_db)):
+    patients = db.query(models.Pasien).all()
+    
+    # Bikin format yang cocok buat frontend React lu nanti
+    result =[]
+    for p in patients:
+        result.append({
+            "id_pasien": p.id_pasien,
+            "no_rm": p.no_rm,
+            "nama_pasien": p.nama_pasien
+        })
+        
+    return {"status": "success", "data": result}
+
+class JenisCreate(BaseModel):
+    nama_jenis: str
+
+@app.post("/api/jenis")
+def create_jenis(jenis: JenisCreate, db: Session = Depends(get_db)):
+    db_jenis = models.Jenis(nama_jenis=jenis.nama_jenis)
+    db.add(db_jenis)
+    db.commit()
+    db.refresh(db_jenis)
+    return {"message": "Jenis berhasil ditambahkan", "data": db_jenis}
+
+@app.get("/api/jenis")
+def get_all_jenis(db: Session = Depends(get_db)):
+    jenis_list = db.query(models.Jenis).all()
+    return {"status": "success", "data": jenis_list}
+
+# ==========================================
+# API UNTUK SIMPAN PEMERIKSAAN & ANALISIS
+# ==========================================
+@app.post("/api/save-analysis")
+async def save_analysis(
+    id_pasien: int = Form(...),
+    id_jenis: int = Form(...),
+    # teks_hasil_analisis kita buat Optional agar Auto-Analyze bisa ke-trigger nanti
+    teks_hasil_analisis: Optional[str] = Form(None), 
+    gambar_asli: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    # Logika simpan gambar sama seperti sebelumnya...
+    no_reg = f"REG-{uuid.uuid4().hex[:8].upper()}"
+    pemeriksaan_baru = models.Pemeriksaan(id_pasien=id_pasien, no_reg=no_reg, id_dokter=1)
+    db.add(pemeriksaan_baru)
+    db.commit()
+
+    file_ext = gambar_asli.filename.split(".")[-1]
+    file_path = os.path.join(IMG_DIR, f"{uuid.uuid4().hex}.{file_ext}")
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(gambar_asli.file, buffer)
+
+    analisis_baru = models.Analisis(
+        id_pemeriksaan=pemeriksaan_baru.id_pemeriksaan,
+        id_jenis=id_jenis,
+        gambar_asli=file_path,
+        teks_hasil_analisis=teks_hasil_analisis, # Kalo dikosongin dari UI, ini jadi NULL (Bagus!)
+        status="Selesai"
+    )
+    db.add(analisis_baru)
+    db.commit()
+    return {"status": "success", "id_analisis": analisis_baru.id_analisis}
+
+# ==========================================
+# API: GET PROFIL PASIEN & RIWAYAT PEMERIKSAAN
+# ==========================================
+@app.get("/api/patients/{id_pasien}")
+def get_patient_detail(id_pasien: int, db: Session = Depends(get_db)):
+    # Cari pasien
+    pasien = db.query(models.Pasien).filter(models.Pasien.id_pasien == id_pasien).first()
+    if not pasien:
+        raise HTTPException(status_code=404, detail="Pasien tidak ditemukan")
+    
+    # Ambil semua pemeriksaan & analisis milik pasien ini
+    pemeriksaan_list = db.query(models.Pemeriksaan).filter(models.Pemeriksaan.id_pasien == id_pasien).all()
+    
+    history =[]
+    for pem in pemeriksaan_list:
+        for anal in pem.analisis:
+            # Ambil nama jenis (X-Ray, MRI, dll)
+            jenis = db.query(models.Jenis).filter(models.Jenis.id_jenis == anal.id_jenis).first()
+            nama_jenis = jenis.nama_jenis if jenis else "Lainnya"
+
+            history.append({
+                "id_record": anal.id_analisis, # Ini ID untuk dibuka di halaman RecordDetail
+                "id_pemeriksaan": pem.id_pemeriksaan,
+                "type": nama_jenis,
+                "date": pem.tgl_pemeriksaan.strftime("%d %b %Y"),
+                "imgUrl": get_clean_url(anal.gambar_asli), # URL gambar asli
+                # Cek apakah sudah dianalisis AI atau belum
+                "is_analyzed": True if anal.teks_hasil_analisis else False,
+                "ai_result": json.loads(anal.teks_hasil_analisis) if anal.teks_hasil_analisis else None  
+            })
+            
+    return {
+        "status": "success",
+        "patient": {
+            "id_pasien": pasien.id_pasien,
+            "no_rm": pasien.no_rm,
+            "nama_pasien": pasien.nama_pasien
+        },
+        "history": history
+    }
+# ==========================================
+# API: GET DETAIL RECORD (WITH AUTO-ANALYZE)
+# ==========================================
+@app.get("/api/records/{id_analisis}")
+async def get_record_detail(id_analisis: int, db: Session = Depends(get_db)):
+    # 1. Cari data analisis di database
+    analisis = db.query(models.Analisis).filter(models.Analisis.id_analisis == id_analisis).first()
+    if not analisis:
+        raise HTTPException(status_code=404, detail="Data analisis tidak ditemukan")
+
+    # ========================================================
+    # JIKA BELUM ADA HASIL AI (TRIGGER AUTO-ANALYZE OPENAI)
+    # ========================================================
+    if not analisis.teks_hasil_analisis:
+        print(f"Menginisiasi Auto-Analyze AI untuk Record ID: {id_analisis}...")
+        
+        file_path = analisis.gambar_asli
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File gambar fisik tidak ditemukan di server")
+            
+        with open(file_path, "rb") as image_file:
+            contents = image_file.read()
+        
+        pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
+        image_base64 = base64.b64encode(contents).decode("utf-8")
+
+        # Ambil jenis analisis dari relasi DB untuk nentuin prompt
+        jenis = db.query(models.Jenis).filter(models.Jenis.id_jenis == analisis.id_jenis).first()
+        analysis_type = jenis.nama_jenis.lower() if jenis else "xray"
+
+        # --- PROMPT DARI TEMEN LO ---
+        prompt_xray = """
+        Analyze this chest X-ray image.
+        Focus ONLY on lung fields.
+        Do NOT analyze:
+        - heart (cardiac silhouette)
+        - bones
+        - diaphragm
+        ------------------------
+        TASK
+        ------------------------
+        1. Identify visible abnormalities in lung regions
+        2. Describe findings in professional radiology style
+        3. Estimate risk level
+        4. Suggest most likely disease (NOT definitive diagnosis)
+        5. Provide clinical recommendation
+        ------------------------
+        FINDINGS RULES
+        ------------------------
+        - Write in detailed radiology narrative style
+        - Minimum 3–5 sentences
+        - Must read like a professional radiology report
+        - Include: location, pattern, severity
+        - Explain findings clearly (not bullet-like)
+        - Use natural medical language flow
+        Normal case:
+        - Clearly state lungs appear normal
+        - Avoid uncertain or speculative language
+        - Use semi-technical language
+        - Avoid overly complex terminology
+        - Make it understandable for non-medical users
+        ABNORMALITY RULES:
+        - Must list 1–3 most likely diseases
+        - Use numbered format
+        - Each disease must include: medical name, simple explanation in layman terms
+        - If normal: "Tidak ditemukan kelainan yang signifikan pada paru-paru"
+        ------------------------
+        BOUNDING BOX RULES
+        ------------------------
+        - Detect ALL suspicious regions
+        - Maximum 5 boxes
+        - Must be tight and minimal
+        - Avoid healthy areas
+        - Coordinates normalized (0–1)
+        - If normal: return empty[]
+        ------------------------
+        RISK ESTIMATION
+        ------------------------
+        - Range: 0–100
+        - Based on: affected area, number of regions, opacity intensity
+        - Provide simple explainable reasoning
+        ------------------------
+        RECOMMENDATION RULES
+        ------------------------
+        - Write in natural, patient-friendly clinical explanation
+        - Avoid overly formal or textbook language
+        Structure:
+        1. Approach
+        2. Treatment
+        Tone: Calm, informative, and helpful
+        ------------------------
+        OUTPUT FORMAT
+        ------------------------
+        Return ONLY valid JSON. No explanation, no markdown.
+        {
+        "findings": "...",
+        "abnormality": "...",
+        "risk": 0-100,
+        "risk_factors": {
+            "area": "...",
+            "region_count": "...",
+            "intensity": "...",
+            "calculation": "..."
+        },
+        "bboxes":[
+            {"x": 0-1, "y": 0-1, "width": 0-1, "height": 0-1}
+        ],
+        "recommendation": {
+            "approach": "...",
+            "treatment": "..."
+        }
+        }
+        """
+        
+        prompt_fundus = """
+        Analyze this retinal fundus image.
+        Focus on retinal abnormalities including:
+        - microaneurysms (small red dots)
+        - hemorrhages (dark red patches)
+        - exudates (yellow-white deposits)
+        - cotton wool spots (soft white lesions)
+        - abnormal blood vessels (tortuosity, neovascularization)
+        - macula abnormalities
+        Rules:
+        - Do NOT provide a definitive medical diagnosis
+        - Detect ALL suspicious retinal lesions
+        - If normal: return empty bboxes[]
+        Findings rules:
+        - Write in detailed clinical narrative style (ophthalmology)
+        - Minimum 3–5 sentences
+        - Include: location, lesion type, severity
+        Normal case rule:
+        - Clearly state retina appears normal
+        Abnormality rules:
+        - MUST include possible disease name
+        Bounding boxes:
+        - Tight around lesions
+        - Max 5 boxes
+        - Coordinates normalized (0–1)
+        Output Format:
+        Return ONLY valid JSON.
+        {
+        "findings": "...",
+        "abnormality": "...",
+        "risk": 0-100,
+        "risk_factors": {
+            "lesion_count": "...",
+            "spread": "...",
+            "severity": "...",
+            "calculation": "..."
+        },
+        "bboxes":[
+            {"x": 0-1, "y": 0-1, "width": 0-1, "height": 0-1}
+        ],
+        "recommendation": {
+            "approach": "...",
+            "treatment": "..."
+        }
+        }
+        """
+        
+        prompt_ct = """
+        test
+        """
+        
+        if "x-ray" in analysis_type or "xray" in analysis_type:
+            prompt = prompt_xray
+        elif "fundus" in analysis_type or "mata" in analysis_type:
+            prompt = prompt_fundus
+        elif "ct" in analysis_type:
+            prompt = prompt_ct
+        else:
+            prompt = prompt_xray  # fallback
+        
+        # Eksekusi OpenAI dari temen lo
+        response = client.responses.create(
+            model="gpt-5.4-mini",
+            input=[
+                {
+                    "role": "user",
+                    "content":[
+                        {"type": "input_text", "text": prompt},
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:image/jpeg;base64,{image_base64}"
+                        }
+                    ]
+                }
+            ],
+            temperature=0.3
+        )
+
+        try:
+            content = response.output[0].content[0].text
+            content = re.sub(r"```json|```", "", content).strip()
+            print("RAW AI:", content)
+            
+            ai_result = json.loads(content)
+            
+            if "risk_factors" not in ai_result:
+                ai_result["risk_factors"] = {
+                    "area": "-",
+                    "region_count": "-",
+                    "intensity": "-",
+                    "calculation": "Tidak tersedia"
+                }
+            
+            # --- TRANSLATE LOGIC TEMEN LO ---
+            ai_result["findings"] = translate_text(ai_result.get("findings"))
+            ai_result["abnormality"] = translate_text(ai_result.get("abnormality"))
+            ai_result["recommendation"]["approach"] = translate_text(ai_result["recommendation"].get("approach"))
+            ai_result["recommendation"]["treatment"] = translate_text(ai_result["recommendation"].get("treatment"))
+            ai_result["risk_factors"]["calculation"] = translate_text(ai_result["risk_factors"].get("calculation"))
+            ai_result["risk_factors"]["area"] = translate_text(ai_result["risk_factors"].get("area"))
+            ai_result["risk_factors"]["region_count"] = translate_text(str(ai_result["risk_factors"].get("region_count") or ai_result["risk_factors"].get("lesion_count", "-")))
+            ai_result["risk_factors"]["intensity"] = translate_text(ai_result["risk_factors"].get("intensity") or ai_result["risk_factors"].get("severity", "-"))
+
+            required_keys =["findings", "abnormality", "risk", "bboxes", "recommendation"]
+            for key in required_keys:
+                if key not in ai_result:
+                    raise HTTPException(status_code=500, detail=f"{key} tidak ada di response AI")
+
+        except Exception as e:
+            print("ERROR:", str(e))
+            raise HTTPException(status_code=500, detail="Format AI tidak valid")
+        
+        # --- BBOX OPENCV DARI TEMEN LO ---
+        bboxes = ai_result.get("bboxes",[])
+        overlay = np.array(pil_image)
+
+        if not bboxes:
+            print("AI tidak mendeteksi area abnormal")
+        else:
+            refined_boxes = refine_bbox_with_opencv(overlay, bboxes)
+            if refined_boxes:
+                overlay = draw_boxes(overlay, refined_boxes)
+            else:
+                print("Fallback ke bbox AI")
+                h, w, _ = overlay.shape
+                for bbox in bboxes:
+                    x = int(bbox["x"] * w)
+                    y = int(bbox["y"] * h)
+                    bw = int(bbox["width"] * w)
+                    bh = int(bbox["height"] * h)
+                    overlay = draw_boxes(overlay, [(x, y, bw, bh)])
+
+        # Save Gambar Segmentasi
+        import uuid
+        file_name_hasil = f"hasil_{uuid.uuid4().hex}.jpg"
+        file_path_hasil = os.path.join(IMG_DIR, file_name_hasil)
+        cv2.imwrite(file_path_hasil, cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
+        
+        # UPDATE DB
+        analisis.teks_hasil_analisis = json.dumps(ai_result)
+        analisis.gambar_hasil = file_path_hasil
+        db.commit()
+        db.refresh(analisis)
+        print("Auto-Analyze Selesai dan disimpan ke Database!")
+
+    # ========================================================
+    # RETURN HASIL KE FRONTEND (KLAUSA ELSE YANG KEPOTONG)
+    # ========================================================
+    # ========================================================
+    # JIKA SUDAH ADA HASIL (Ambil langsung dari Database)
+    # ========================================================
+    try:
+        if analisis.teks_hasil_analisis:
+            # Kita bersihkan string dari spasi atau karakter aneh di ujung
+            clean_json_str = analisis.teks_hasil_analisis.strip()
+            
+            # Cek apakah datanya "double string" (kasus langka tapi sering bikin error)
+            hasil_json = json.loads(clean_json_str)
+            if isinstance(hasil_json, str):
+                hasil_json = json.loads(hasil_json)
+        else:
+            hasil_json = None
+    except Exception as e:
+        print(f"Gagal parse JSON dari DB: {e}")
+        # Jika gagal, kembalikan data kosong bukannya bikin server mati (500)
+        hasil_json = {
+            "findings": "Data di database kotor/corrupted",
+            "abnormality": "Butuh Analisis Ulang",
+            "risk": 0,
+            "recommendation": {"approach": "-", "treatment": "-"}
+        }
+    
+    return {
+        "status": "success",
+        "data": {
+            "id_analisis": analisis.id_analisis,
+            "gambar_asli_url": get_clean_url(analisis.gambar_asli), # Pake fungsi pembersih
+            "gambar_hasil_url": get_clean_url(analisis.gambar_hasil), 
+            "ai_result": hasil_json,
+            "doctor_notes": json.loads(analisis.doctor_notes) if analisis.doctor_notes else None,
+            "doctor_bboxes": json.loads(analisis.doctor_bboxes) if analisis.doctor_bboxes else None
+        }
+    }
+
+@app.get("/api/debug/reset/{id_analisis}")
+def reset_analysis(id_analisis: int, db: Session = Depends(get_db)):
+    analisis = db.query(models.Analisis).filter(models.Analisis.id_analisis == id_analisis).first()
+    if analisis:
+        analisis.teks_hasil_analisis = None # Kosongkan biar ke-trigger analyze ulang
+        analisis.gambar_hasil = None
+        db.commit()
+        return {"msg": "Data direset, silakan refresh halaman Detail di React"}
+    
+def get_clean_url(path):
+    if not path: return None
+    # Ubah backslash Windows (\) jadi forward slash (/) biar browser paham
+    clean_path = path.replace("\\", "/")
+    # Pastikan tidak double http
+    return f"http://127.0.0.1:8000/{clean_path}"
+
+# ================== SEEDING DATA DUMMY ==================
+
+seed_data()

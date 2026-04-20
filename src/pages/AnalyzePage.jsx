@@ -9,11 +9,7 @@ import UploadForm from "../components/UploadForm";
 import ResultSection from "../components/ResultSection";
 
 // ===== DAFTAR KATEGORI =====
-const CATEGORIES = [
-  "Retina Scan",
-  "CT Scan",
-  "X-Ray",
-];
+const CATEGORIES = ["Retina Scan", "CT Scan", "X-Ray"];
 
 export default function AnalyzePage() {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -22,7 +18,9 @@ export default function AnalyzePage() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [analysisType, setAnalysisType] = useState("X-Ray"); // Default ke X-Ray
+  const [analysisType, setAnalysisType] = useState("X-Ray");
+  const [patients, setPatients] = useState([]);
+  const [selectedPatientId, setSelectedPatientId] = useState("");
 
   const resultsRef = useRef(null);
 
@@ -43,11 +41,18 @@ export default function AnalyzePage() {
     }
   }, [result]);
 
+  useEffect(() => {
+    fetch("http://127.0.0.1:8000/api/patients")
+      .then((res) => res.json())
+      .then((data) => setPatients(data.data));
+  }, []);
+
   const handleAnalyze = async () => {
     if (!selectedFile) {
       toast.error("Silakan upload gambar terlebih dahulu");
       return;
     }
+    if (!selectedPatientId) { toast.error("Pilih Pasien dulu Bosku!"); return; }
     setLoading(true);
     setResult(null);
 
@@ -55,6 +60,7 @@ export default function AnalyzePage() {
     formData.append("image", selectedFile);
     formData.append("symptoms", symptoms);
     formData.append("analysis_type", analysisType);
+    formData.append("id_pasien", selectedPatientId);
 
     try {
       const response = await fetch("http://127.0.0.1:8000/analyze", {
@@ -162,6 +168,24 @@ export default function AnalyzePage() {
                 {CATEGORIES.map((cat, idx) => (
                   <option key={idx} value={cat}>
                     {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mb-4 max-w-3xl mx-auto bg-white p-4 rounded-xl border border-slate-200">
+              <label className="block mb-2 font-bold text-slate-700">
+                Pilih Pasien:
+              </label>
+              <select
+                value={selectedPatientId}
+                onChange={(e) => setSelectedPatientId(e.target.value)}
+                className="w-full p-2 border rounded-lg shadow-sm"
+              >
+                <option value="">-- Pilih Pasien dari Database --</option>
+                {patients.map((p) => (
+                  <option key={p.id_pasien} value={p.id_pasien}>
+                    {p.no_rm} - {p.nama_pasien}
                   </option>
                 ))}
               </select>
