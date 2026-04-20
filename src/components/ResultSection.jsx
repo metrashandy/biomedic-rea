@@ -37,7 +37,11 @@ export default function ResultSection({
   doctorNotes,
   setDoctorNotes,
   analysisType,
+  handleSaveDoctor,
+  handleSaveDoctorLocal,
 }) {
+
+  console.log("INI RESULTSECTION YANG BENAR");
   const imageRef = useRef(null);
   const [showSegmentation, setShowSegmentation] = useState(true);
   const [showDoctorBoxes, setShowDoctorBoxes] = useState(true);
@@ -430,7 +434,18 @@ export default function ResultSection({
         >
           <RotateCcw size={18} /> Diagnosis Ulang
         </button>
+        <button  onClick={(e) => {
+    e.stopPropagation();
 
+    if (typeof handleSaveDoctorLocal === "function") {
+      handleSaveDoctorLocal();
+    } else {
+      console.error("handleSaveDoctorLocal UNDEFINED ❌");
+    }
+  }} className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg shadow-sm transition-colors disabled:opacity-50"
+        >
+        Simpan Catatan Dokter
+        </button>        
         <button
           onClick={onExport}
           disabled={exporting}

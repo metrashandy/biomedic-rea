@@ -22,6 +22,11 @@ from pydantic import BaseModel
 import shutil
 import uuid
 import json
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
+
+
 
 # Perintah ini yang akan mengeksekusi pembuatan file medis.db & tabelnya
 models.Base.metadata.create_all(bind=engine)
@@ -56,12 +61,19 @@ UPLOAD_DIR = "uploads"
 IMG_DIR = os.path.join(UPLOAD_DIR, "images")
 PDF_DIR = os.path.join(UPLOAD_DIR, "pdfs")
 
+class CORSMiddlewareForStatic(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/uploads"):
+            response.headers["Access-Control-Allow-Origin"] = "*"
+            response.headers["Access-Control-Allow-Methods"] = "*"
+            response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
+
 # Otomatis bikin folder kalau belum ada
 os.makedirs(IMG_DIR, exist_ok=True)
 os.makedirs(PDF_DIR, exist_ok=True)
 
-# Mount folder agar bisa diakses public via URL (misal: http://127.0.0.1:8000/uploads/images/foto.jpg)
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 # Dependency untuk membuka & menutup sesi database otomatis
 def get_db():
     db = SessionLocal()
@@ -141,6 +153,10 @@ app.add_middleware(
     allow_methods=["*"],  # Mengizinkan semua method (GET, POST, dll)
     allow_headers=["*"],  # Mengizinkan semua header
 )
+app.add_middleware(CORSMiddlewareForStatic)
+
+# Mount folder agar bisa diakses public via URL (misal: http://127.0.0.1:8000/uploads/images/foto.jpg)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # ================== FUNGSI BANTUAN ==================
 def translate_text(text):
@@ -167,7 +183,7 @@ async def analyze_xray(
     image: UploadFile = File(...),
     symptoms: Optional[str] = Form(None),
     analysis_type: Optional[str] = Form("xray"),  # ✅ TAMBAHKAN INI
-     id_pasien: int = Form(...), # <--- Tambah ini
+    id_pasien: int = Form(...), # <--- Tambah ini
     db: Session = Depends(get_db)
 ):  
     
@@ -348,63 +364,123 @@ async def analyze_xray(
     prompt_fundus = """
     Analyze this retinal fundus image.
 
-    Focus on retinal abnormalities including:
-    - microaneurysms (small red dots)
-    - hemorrhages (dark red patches)
-    - exudates (yellow-white deposits)
-    - cotton wool spots (soft white lesions)
-    - abnormal blood vessels (tortuosity, neovascularization)
-    - macula abnormalities
+    Focus ONLY on retinal structures.
 
-    Rules:
-    - Do NOT provide a definitive medical diagnosis
-    - Detect ALL suspicious retinal lesions
-    - If normal: return empty bboxes []
+    Do NOT analyze:
+    - non-retinal artifacts
+    - image borders or noise
 
-    Findings rules:
-    - Write in detailed clinical narrative style (ophthalmology)
-    - Minimum 3–5 sentences
-    - Include:
-    - location (central, peripheral, macula, optic disc area)
-    - lesion type (microaneurysm, hemorrhage, exudate, etc)
-    - severity (mild/moderate/severe)
-    - Avoid short or fragmented sentences
+    ------------------------
+    TASK
+    ------------------------
+    1. Identify visible retinal abnormalities
+    2. Describe findings in detailed ophthalmology narrative
+    3. Estimate risk level
+    4. Suggest most likely disease(s) (NOT definitive diagnosis)
+    5. Provide clear clinical recommendation
 
-    Normal case rule:
+    ------------------------
+    FINDINGS RULES
+    ------------------------
+    - Write in detailed ophthalmology narrative style
+    - Minimum 4–6 sentences
+    - Must read like a professional eye examination report
+    - Use flowing sentences (NOT bullet points)
+
+    Include:
+    - location (macula, optic disc, vascular arcades, peripheral retina)
+    - lesion type (microaneurysm, hemorrhage, exudate, cotton wool spot, neovascularization)
+    - distribution (localized, scattered, diffuse)
+    - severity (mild, moderate, severe)
+
+    Style:
+    - Use semi-technical language (medical + simple explanation)
+    - Avoid overly complex jargon
+    - Make it understandable for non-medical users
+
+    Normal case:
     - Clearly state retina appears normal
-    - No abnormalities detected
+    - Mention absence of lesions
+    - Avoid uncertainty language
 
-    Abnormality rules:
-    - MUST include possible disease name:
-    Examples:
-    - diabetic retinopathy
-    - hypertensive retinopathy
-    - macular degeneration
-    - retinal hemorrhage
+    ------------------------
+    ABNORMALITY RULES
+    ------------------------
+    - MUST list 1–3 most likely diseases
+    - Use numbered format:
 
-    Format:
-    - "Possible diabetic retinopathy"
-    - "Possible hypertensive retinopathy, consider macular edema"
+    Example:
+    1. Diabetic Retinopathy (kerusakan retina akibat diabetes)
+    → Jelaskan dengan bahasa sederhana
 
-    Bounding boxes:
-    - Tight around lesions
-    - Max 5 boxes
+    2. Hypertensive Retinopathy (gangguan retina akibat tekanan darah tinggi)
+    → Jelaskan dengan bahasa sederhana
+
+    Requirements:
+    - Each disease MUST include:
+    - medical name
+    - simple explanation (bahasa Indonesia)
+    - Avoid unexplained medical terms
+
+    If normal:
+    "Tidak ditemukan kelainan signifikan pada retina"
+
+    ------------------------
+    BOUNDING BOX RULES
+    ------------------------
+    - Detect ALL suspicious lesions
+    - Maximum 5 boxes
+    - Tight and minimal (jangan terlalu besar)
+    - Focus only on abnormal areas
     - Coordinates normalized (0–1)
+    - If normal: return []
 
-    Risk estimation:
+    ------------------------
+    RISK ESTIMATION
+    ------------------------
+    - Range: 0–100
     - Based on:
     - number of lesions
-    - spread (localized/diffuse)
+    - distribution (localized vs diffuse)
     - severity of lesions
-    - Provide explainable calculation
 
-    Recommendation rules:
-    - Low risk → monitoring
-    - Medium → ophthalmology follow-up
-    - High → urgent evaluation
+    - Provide simple reasoning:
+    explain why risk is low / medium / high
 
-    Output:
-    Return ONLY valid JSON.
+    ------------------------
+    RECOMMENDATION RULES
+    ------------------------
+    - Write like a doctor explaining to a patient
+    - Use natural, simple language
+
+    Structure:
+    1. Approach → penjelasan kondisi & langkah selanjutnya
+    2. Treatment → opsi penanganan
+
+    Length:
+    - Each part: 2–3 sentences
+
+    Risk-based tone:
+
+    LOW RISK:
+    - Reassure patient
+    - Suggest monitoring
+
+    MEDIUM RISK:
+    - Suggest follow-up
+    - Explain why monitoring needed
+
+    HIGH RISK:
+    - Suggest urgent ophthalmology evaluation
+    - Explain possible seriousness
+
+    Tone:
+    - Calm, informative, not robotic
+
+    ------------------------
+    OUTPUT FORMAT
+    ------------------------
+    Return ONLY valid JSON. No explanation, no markdown.
 
     {
     "findings": "...",
@@ -412,7 +488,7 @@ async def analyze_xray(
     "risk": 0-100,
     "risk_factors": {
         "lesion_count": "...",
-        "spread": "...",
+        "distribution": "...",
         "severity": "...",
         "calculation": "..."
     },
@@ -428,17 +504,166 @@ async def analyze_xray(
     
     
     prompt_ct = """
-    test
+    Analyze this non-contrast brain CT scan.
+
+    Focus ONLY on intracranial structures.
+
+    Do NOT analyze:
+    - skull fractures (unless clearly related to intracranial pathology)
+    - external artifacts
+    - non-brain regions
+
+    ------------------------
+    TASK
+    ------------------------
+    1. Identify visible intracranial abnormalities
+    2. Describe findings in detailed radiology narrative
+    3. Estimate risk level
+    4. Suggest most likely diagnosis (NOT definitive)
+    5. Provide clinical recommendation
+
+    ------------------------
+    FINDINGS RULES
+    ------------------------
+    - Write in detailed neuroradiology narrative style
+    - Minimum 4–6 sentences
+    - Must read like a professional CT scan report
+    - Use flowing sentences (NOT bullet points)
+
+    Include:
+    - location (lobar region: frontal, parietal, temporal, occipital, cerebellum, brainstem)
+    - side (left/right/bilateral)
+    - density (hyperdense, hypodense, isodense)
+    - pattern (focal, diffuse, mass effect)
+    - severity (mild, moderate, severe)
+
+    Also mention if present:
+    - midline shift
+    - ventricular compression or dilation
+    - edema
+    - hemorrhage patterns
+
+    Style:
+    - Use semi-technical language
+    - Explain complex terms briefly
+    - Keep understandable for non-medical users
+
+    Normal case:
+    - Clearly state no acute intracranial abnormality
+    - Mention:
+    - no hemorrhage
+    - no mass effect
+    - no midline shift
+
+    ------------------------
+    ABNORMALITY RULES
+    ------------------------
+    - MUST list 1–3 most likely conditions
+    - Use numbered format:
+
+    Example:
+    1. Intracerebral Hemorrhage (perdarahan di dalam otak)
+    → Jelaskan secara sederhana
+
+    2. Ischemic Stroke (stroke akibat sumbatan pembuluh darah)
+    → Jelaskan secara sederhana
+
+    3. Brain Edema (pembengkakan jaringan otak)
+    → Jelaskan secara sederhana
+
+    Requirements:
+    - Include medical name + simple explanation (Bahasa Indonesia)
+    - Avoid unexplained jargon
+
+    If normal:
+    "Tidak ditemukan kelainan intrakranial yang signifikan"
+
+    ------------------------
+    BOUNDING BOX RULES
+    ------------------------
+    - Detect ALL suspicious regions
+    - Maximum 5 boxes
+    - Tight and minimal
+    - Focus on abnormal areas only
+    - Coordinates normalized (0–1)
+    - If normal: return []
+
+    ------------------------
+    RISK ESTIMATION
+    ------------------------
+    - Range: 0–100
+    - Based on:
+    - size of lesion
+    - location (critical area or not)
+    - presence of mass effect or midline shift
+    - number of abnormalities
+
+    - Provide explainable reasoning
+
+    ------------------------
+    RECOMMENDATION RULES
+    ------------------------
+    - Write like a doctor explaining to patient
+    - Use clear and calm language
+
+    Structure:
+    1. Approach → penjelasan kondisi
+    2. Treatment → langkah penanganan
+
+    Length:
+    - Each part: 2–3 sentences
+
+    Risk-based tone:
+
+    LOW RISK:
+    - Monitoring
+    - No urgent action
+
+    MEDIUM RISK:
+    - Suggest further imaging / follow-up
+    - Explain need for observation
+
+    HIGH RISK:
+    - Urgent medical attention
+    - Explain potential danger clearly
+
+    Tone:
+    - Informative, calm, not robotic
+
+    ------------------------
+    OUTPUT FORMAT
+    ------------------------
+    Return ONLY valid JSON. No explanation, no markdown.
+
+    {
+    "findings": "...",
+    "abnormality": "...",
+    "risk": 0-100,
+    "risk_factors": {
+        "lesion_size": "...",
+        "location": "...",
+        "mass_effect": "...",
+        "calculation": "..."
+    },
+    "bboxes": [
+        {"x": 0-1, "y": 0-1, "width": 0-1, "height": 0-1}
+    ],
+    "recommendation": {
+        "approach": "...",
+        "treatment": "..."
+    }
+    }
     """
+    analysis_type = analysis_type.lower().strip()
     
-    if analysis_type == "xray":
+    if "xray" in analysis_type:
         prompt = prompt_xray
-    elif analysis_type == "fundus":
+    elif "fundus" in analysis_type or "retina" in analysis_type:
         prompt = prompt_fundus
-    elif analysis_type == "ct":
+    elif "ct" in analysis_type:
         prompt = prompt_ct
     else:
-        prompt = prompt_xray  # fallback
+        prompt = prompt_xray
     if symptoms:
         symptoms_en = translate_to_english(symptoms)
         prompt += f"\nPatient symptoms: {symptoms_en}\n"
@@ -498,6 +723,8 @@ async def analyze_xray(
             id_jenis=id_j,
             gambar_asli=file_path,
             teks_hasil_analisis=json.dumps(ai_result),
+            ai_bboxes=json.dumps(ai_result.get("bboxes", [])),
+            doctor_bboxes=json.dumps([]),            
             status="Selesai"
         )
         db.add(new_anal)
@@ -584,6 +811,7 @@ async def analyze_xray(
     
     # ================== RETURN ==================
     return {
+        "record_id":new_anal.id_analisis,
         "result": ai_result,
         "segmentation_image": base64_img
     }
@@ -1011,9 +1239,48 @@ async def get_record_detail(id_analisis: int, db: Session = Depends(get_db)):
             "gambar_hasil_url": get_clean_url(analisis.gambar_hasil), 
             "ai_result": hasil_json,
             "doctor_notes": json.loads(analisis.doctor_notes) if analisis.doctor_notes else None,
-            "doctor_bboxes": json.loads(analisis.doctor_bboxes) if analisis.doctor_bboxes else None
-        }
+            "ai_bboxes": json.loads(analisis.ai_bboxes) if analisis.ai_bboxes else [],
+            "doctor_bboxes": json.loads(analisis.doctor_bboxes) if analisis.doctor_bboxes else [],
+            "doctor_notes": json.loads(analisis.doctor_notes) if analisis.doctor_notes else None,        }
     }
+    
+@app.put("/api/records/{id_analisis}/doctor-update")
+async def update_doctor_data(
+    id_analisis: int,
+    doctor_notes: Optional[str] = Form(None),
+    doctor_bboxes: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
+    analisis = db.query(models.Analisis).filter(
+        models.Analisis.id_analisis == id_analisis
+    ).first()
+
+    if not analisis:
+        raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+
+    # ================= SAFE PARSE =================
+    try:
+        existing = json.loads(analisis.doctor_bboxes or "[]")
+    except:
+        existing = []
+
+    try:
+        incoming = json.loads(doctor_bboxes) if doctor_bboxes else []
+    except:
+        incoming = []
+
+    # 🔥 MERGE (TAMBAH, BUKAN OVERWRITE)
+    merged = existing + incoming
+    analisis.doctor_bboxes = json.dumps(merged)
+
+    # 🔥 SAVE NOTES
+    if doctor_notes:
+        analisis.doctor_notes = json.dumps(doctor_notes)
+
+    db.commit()
+    db.refresh(analisis)
+
+    return {"status": "success"}
 
 @app.get("/api/debug/reset/{id_analisis}")
 def reset_analysis(id_analisis: int, db: Session = Depends(get_db)):
@@ -1029,7 +1296,7 @@ def get_clean_url(path):
     # Ubah backslash Windows (\) jadi forward slash (/) biar browser paham
     clean_path = path.replace("\\", "/")
     # Pastikan tidak double http
-    return f"http://127.0.0.1:8000/{clean_path}"
+    return f"http://localhost:8000/{clean_path}"
 
 # ================== SEEDING DATA DUMMY ==================
 

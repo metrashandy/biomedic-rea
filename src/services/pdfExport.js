@@ -149,31 +149,66 @@ export const exportToPDF = async (
     yPos += 15;
 
     // 1. Gambar Asli
-    const originalImgBase64 = await getImageData(
-      item.selectedFile || item.gambar_asli_url,
-    );
-    doc.setFont("helvetica", "bold");
-    doc.text("1. Gambar Asli", margin, yPos);
-    yPos += 5;
-    renderImage(originalImgBase64);
+    let originalSource =
+      item.selectedFile ||
+      item.imagePreview ||
+      item.gambar_asli_url ||
+      item.original_image;
+
+    // 🔥 TAMBAHAN WAJIB (fallback dari AI image)
+    if (!originalSource && item.segmentation_image) {
+      originalSource = `data:image/jpeg;base64,${item.segmentation_image}`;
+    }
+
+    console.log("FINAL ORIGINAL SOURCE:", originalSource);
+
+    const originalImgBase64 = await getImageData(originalSource);
+
+    if (originalImgBase64) {
+      doc.setFont("helvetica", "bold");
+      doc.text("1. Gambar Asli", margin, yPos);
+      yPos += 5;
+      renderImage(originalImgBase64);
+    } else {
+      console.warn("Gambar asli tidak ditemukan untuk item:", item);
+    }
 
     // 2. AI Segmentation
-    if (item.result?.segmentation_image || item.gambar_hasil_url) {
-      const aiImg = item.result?.segmentation_image
-        ? `data:image/jpeg;base64,${item.result.segmentation_image}`
+    if (item.segmentation_image || item.gambar_hasil_url) {
+      const aiImg = item.segmentation_image
+        ? `data:image/jpeg;base64,${item.segmentation_image}`
         : item.gambar_hasil_url;
+
       const aiImgBase64 = await getImageData(aiImg);
+
       doc.setFont("helvetica", "bold");
       doc.text("2. Segmentasi AI", margin, yPos);
       yPos += 5;
+
       renderImage(aiImgBase64);
     }
 
     // 3. Dokter Mark
-    if (item.doctorBoxes && item.doctorBoxes.length > 0) {
+
+    // 🔥 TAMBAHKAN INI DI ATAS IF
+    let doctorBoxes = item.doctorBoxes;
+
+    if (typeof doctorBoxes === "string") {
+      try {
+        doctorBoxes = JSON.parse(doctorBoxes);
+      } catch (e) {
+        console.error("Gagal parse doctorBoxes:", e);
+        doctorBoxes = [];
+      }
+    }
+
+    console.log("DOCTOR BOXES:", doctorBoxes); // debug
+
+    // 🔥 GANTI IF NYA
+    if (doctorBoxes && doctorBoxes.length > 0 && originalImgBase64) {
       const docImgBase64 = await generateDoctorImage(
         originalImgBase64,
-        item.doctorBoxes,
+        doctorBoxes,
       );
       doc.setFont("helvetica", "bold");
       doc.text("3. Segmentasi Dokter", margin, yPos);
@@ -196,22 +231,22 @@ export const exportToPDF = async (
 
     section("1. Temuan");
     addWrappedText(
-      item.result?.result?.findings || item.ai_result?.findings || "-",
+      item.result?.findings || item.ai_result?.findings || "-",
     );
 
     section("2. Potensi Kelainan");
     addWrappedText(
-      item.result?.result?.abnormality || item.ai_result?.abnormality || "-",
+      item.result?.abnormality || item.ai_result?.abnormality || "-",
     );
 
     section("3. Tingkat Risiko");
     addWrappedText(
-      `Overall Risk: ${item.result?.result?.risk || item.ai_result?.risk || 0}%`,
+      `Overall Risk: ${item.result?.risk || item.ai_result?.risk || 0}%`,
     );
 
     section("4. Rekomendasi");
     const rec =
-      item.result?.result?.recommendation || item.ai_result?.recommendation;
+      item.result?.recommendation || item.ai_result?.recommendation;
     addWrappedText(`Pendekatan: ${rec?.approach || "-"}`);
     addWrappedText(`Penanganan: ${rec?.treatment || "-"}`);
 

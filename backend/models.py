@@ -51,6 +51,10 @@ class Analisis(Base):
     doctor_notes = Column(Text, nullable=True)  # Simpan JSON Catatan Dokter
     doctor_bboxes = Column(Text, nullable=True) # Simpan JSON Kotak Hijau Dokter
     hasil_pdf = Column(String, nullable=True)
+    ai_bboxes = Column(Text, nullable=True)
+    doctor_bboxes = Column(Text, nullable=True)
+
+    doctor_notes = Column(Text, nullable=True)
     status = Column(String, default="Selesai")
     created_at = Column(DateTime, default=datetime.utcnow)
 

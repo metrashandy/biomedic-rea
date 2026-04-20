@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Scan, Filter } from "lucide-react";
 import toast from "react-hot-toast";
 import { exportToPDF } from "../services/pdfExport";
+import { useParams } from "react-router-dom";
 
 import Header from "../components/Header";
 import UploadForm from "../components/UploadForm";
@@ -21,8 +22,66 @@ export default function AnalyzePage() {
   const [analysisType, setAnalysisType] = useState("X-Ray");
   const [patients, setPatients] = useState([]);
   const [selectedPatientId, setSelectedPatientId] = useState("");
+  const [recordId, setRecordId] = useState(null);
+  const { id } = useParams();
+  const idToUse = result?.record_id;
 
   const resultsRef = useRef(null);
+
+  const handleSaveDoctorLocal = async () => {
+  console.log("SAVE CLICKED");
+  console.log("RECORD ID:", recordId);
+
+  console.log("ID FINAL:", idToUse);
+
+  if (!idToUse) {
+    console.error("ID TIDAK ADA ❌");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("doctor_notes", JSON.stringify(doctorNotes));
+  formData.append("doctor_bboxes", JSON.stringify(doctorBoxes));
+
+  try {
+    const res = await fetch(`http://localhost:8000/api/records/${recordId}/doctor-update`, {
+      method: "PUT",
+      body: formData
+    });
+
+    if (!res.ok) {
+      console.error("SAVE ERROR:", await res.text());
+      return;
+    }
+
+    const data = await res.json();
+    console.log("SAVE SUCCESS:", data);
+  } catch (err) {
+    console.error("FETCH ERROR:", err);
+  }
+};
+
+  const handleSaveDoctor = async () => {
+  console.log("SAVE CLICKED");
+
+  const formData = new FormData();
+  formData.append("doctor_notes", JSON.stringify(doctorNotes));
+  formData.append("doctor_bboxes", JSON.stringify(doctorBoxes));
+
+  const res = await fetch(`http://localhost:8000/api/records/${recordId}/doctor-update`, {
+    method: "PUT",
+    body: formData
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    console.error("SAVE ERROR:", err);
+    return;
+  }
+
+  const data = await res.json();
+  console.log("SAVE SUCCESS:", data);
+};
 
   const resetForm = () => {
     setSelectedFile(null);
@@ -82,6 +141,8 @@ export default function AnalyzePage() {
         return;
       }
       setResult(data);
+      setRecordId(data.record_id);
+      console.log("FULL RESPONSE:", data);
     } catch (error) {
       console.error(error);
       toast.error("Gagal terhubung ke server.");
@@ -96,23 +157,23 @@ export default function AnalyzePage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleExportPDF = async () => {
-    if (!result || !selectedFile) return;
-    try {
-      setExporting(true);
-      await exportToPDF(
-        result,
-        selectedFile,
-        doctorBoxes,
-        imagePreview,
-        doctorNotes,
-      );
-      toast.success("PDF berhasil dibuat!");
-    } catch (error) {
-      toast.error("Gagal export PDF");
-    } finally {
-      setExporting(false);
-    }
+  const handleExportPDF = () => {
+    const record = {
+      result: result.result,                 // hasil AI
+      segmentation_image: result.segmentation_image,
+
+      // 🔥 INI YANG PENTING
+      selectedFile: selectedFile,            // gambar asli (upload)
+      imagePreview: imagePreview,            // preview gambar
+      doctorBoxes: doctorBoxes,
+      doctorNotes: doctorNotes,              // hasil gambar dokter
+
+      date: new Date().toLocaleDateString(),
+    };
+
+    console.log("RECORD KE PDF:", record);
+
+    exportToPDF(record);
   };
 
   const dummyResult = {
@@ -234,8 +295,7 @@ export default function AnalyzePage() {
         )}
 
         {/* RESULT SECTION */}
-        {result?.result?.findings && (
-          <div ref={resultsRef}>
+          {result && (
             <ResultSection
               result={result}
               imagePreview={imagePreview}
@@ -247,9 +307,9 @@ export default function AnalyzePage() {
               doctorNotes={doctorNotes}
               setDoctorNotes={setDoctorNotes}
               analysisType={analysisType}
+              handleSaveDoctorLocal={()=>handleSaveDoctorLocal()}
             />
-          </div>
-        )}
+          )}
       </motion.div>
     </div>
   );
