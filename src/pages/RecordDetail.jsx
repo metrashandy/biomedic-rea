@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Download, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import toast from "react-hot-toast";
+import { X } from 'lucide-react';
 
 // IMPORT FUNGSI MASTER PDF NYA DI SINI
 import { exportToPDF } from "../services/pdfExport";
@@ -16,6 +17,7 @@ export default function RecordDetail() {
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
 
   // States untuk menampung data dari ResultSection
   const [doctorBoxes, setDoctorBoxes] = useState([]);
@@ -91,6 +93,34 @@ export default function RecordDetail() {
       setExporting(false);
     }
   };
+
+  const processDownload = async (withAI) => {
+    if (!data) return;
+    try {
+      setShowDownloadModal(false);
+      setExporting(true);
+      const toastId = toast.loading("Sedang membuat PDF...");
+
+      const recordToPrint = {
+        ai_result: data.ai_result,
+        gambar_asli_url: data.gambar_asli_url,
+        gambar_hasil_url: data.gambar_hasil_url,
+        doctorBoxes: doctorBoxes, 
+        doctorNotes: doctorNotes, 
+        date: data.date || new Date().toLocaleDateString(),
+      };
+      const patientInfo = { nama_pasien: data.patient_name || "Pasien", no_rm: data.no_rm || "-" };
+
+      // Panggil Master PDF dengan parameter ke-3 (includeAI)
+      await exportToPDF(recordToPrint, patientInfo, withAI);
+      toast.success("PDF Berhasil diunduh!", { id: toastId });
+    } catch (error) {
+      toast.error("Gagal mengekspor PDF");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // 🔥 TAMBAHAN: FUNGSI UNTUK MENYIMPAN CATATAN DOKTER DI HALAMAN RECORD
   const handleSaveDoctor = async () => {
     const formData = new FormData();
@@ -123,52 +153,53 @@ export default function RecordDetail() {
 
   return (
     <div className="min-h-screen bg-sky-50">
-      <Header showBack={true} onBack={() => navigate(-1)} />
-
-      <motion.main
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-6xl mx-auto px-6 py-12"
-      >
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">
-              Detail Rekam Medis Pasien
-            </h1>
-            <p className="text-slate-500">Record ID: #{recordId}</p>
+       {/* --- POP-UP MODAL DOWNLOAD --- */}
+      {showDownloadModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
+            <button onClick={() => setShowDownloadModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500"><X size={24}/></button>
+            <h3 className="text-2xl font-bold text-slate-800 mb-2">Format Laporan PDF</h3>
+            <p className="text-slate-500 mb-6 text-sm">Pilih jenis informasi yang ingin disertakan dalam file PDF.</p>
+            
+            <div className="space-y-3">
+              <button onClick={() => processDownload(true)} className="w-full p-4 border-2 border-blue-500 bg-blue-50 hover:bg-blue-100 rounded-xl text-left transition-colors">
+                <p className="font-bold text-blue-700 text-lg">Laporan Lengkap (AI & Dokter)</p>
+                <p className="text-sm text-blue-600 mt-1">Mencakup semua hasil analisis otomatis AI dan catatan manual dokter.</p>
+              </button>
+              
+              <button onClick={() => processDownload(false)} className="w-full p-4 border-2 border-slate-200 bg-white hover:bg-slate-50 rounded-xl text-left transition-colors">
+                <p className="font-bold text-slate-800 text-lg">Laporan Resmi (Hanya Dokter)</p>
+                <p className="text-sm text-slate-500 mt-1">Hanya menampilkan gambar asli, kotak hijau dokter, dan catatan dokter.</p>
+              </button>
+            </div>
           </div>
-
+        </div>
+      )}
+      <Header showBack={true} onBack={() => navigate(-1)} />
+      <motion.main initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl mx-auto px-6 py-12">
+        <div className="flex justify-between items-center mb-8">
+          <div><h1 className="text-2xl font-bold text-slate-800">Detail Rekam Medis</h1></div>
+          
           <button
-            onClick={handleExportSinglePDF} // <--- PANGGIL DI SINI
+            onClick={() => setShowDownloadModal(true)} // <-- Buka Modal Pop-Up
             disabled={exporting}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium transition-all shadow-md disabled:bg-slate-400"
           >
-            <Download size={18} />
-            {exporting ? "Mengekspor..." : "Download Laporan PDF"}
+            <Download size={18} /> {exporting ? "Mengekspor..." : "Download Laporan PDF"}
           </button>
         </div>
 
-        {/* 
-          TAMPILANNYA 100% SAMA DENGAN ANALYZE PAGE 
-          KARENA MENGGUNAKAN KOMPONEN RESULTSECTION YANG SAMA
-        */}
         <ResultSection
-          result={{
-            result: data.ai_result,
-            segmentation_image: null, // Kita kirim null karena kita pake gambar_hasil_url
-          }}
+          result={{ result: data.ai_result, segmentation_image: data.gambar_hasil_url || data.gambar_asli_url }}
           imagePreview={data.gambar_asli_url}
           onReset={() => navigate("/patients")}
           exporting={exporting}
-          onExport={handleExportSinglePDF}
+          onExport={() => setShowDownloadModal(true)} // <-- Ubah yang di dalam ResultSection juga
           setDoctorBoxes={setDoctorBoxes}
           doctorBoxes={doctorBoxes}
           doctorNotes={doctorNotes}
           setDoctorNotes={setDoctorNotes}
-          // Tambahkan prop ini buat fallback image di ResultSection
-          isHistoryMode={true}
-          historyImage={data.gambar_hasil_url || data.gambar_asli_url}
-          handleSaveDoctorLocal={handleSaveDoctor}
+          analysisType="X-Ray"
         />
       </motion.main>
     </div>

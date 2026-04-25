@@ -1262,35 +1262,20 @@ async def update_doctor_data(
     doctor_bboxes: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
-    analisis = db.query(models.Analisis).filter(
-        models.Analisis.id_analisis == id_analisis
-    ).first()
-
+    analisis = db.query(models.Analisis).filter(models.Analisis.id_analisis == id_analisis).first()
     if not analisis:
         raise HTTPException(status_code=404, detail="Data tidak ditemukan")
 
-    # ================= SAFE PARSE =================
-    try:
-        existing = json.loads(analisis.doctor_bboxes or "[]")
-    except:
-        existing = []
+    # Langsung simpan aja karena dari React udah berwujud JSON String yang rapi.
+    # Kita TIMPA (Overwrite) data lama biar fungsi "Hapus Kotak" di Frontend berfungsi.
+    if doctor_bboxes is not None:
+        analisis.doctor_bboxes = doctor_bboxes
 
-    try:
-        incoming = json.loads(doctor_bboxes) if doctor_bboxes else []
-    except:
-        incoming = []
-
-    # 🔥 MERGE (TAMBAH, BUKAN OVERWRITE)
-    merged = existing + incoming
-    analisis.doctor_bboxes = json.dumps(merged)
-
-    # 🔥 SAVE NOTES
-    if doctor_notes:
-        analisis.doctor_notes = json.dumps(doctor_notes)
+    if doctor_notes is not None:
+        analisis.doctor_notes = doctor_notes
 
     db.commit()
     db.refresh(analisis)
-
     return {"status": "success"}
 
 @app.get("/api/debug/reset/{id_analisis}")

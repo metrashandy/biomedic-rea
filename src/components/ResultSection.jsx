@@ -5,6 +5,8 @@ import {
   User,
   RotateCcw,
   Download,
+  Maximize2,
+  X,
 } from "lucide-react";
 import { useState, useRef } from "react";
 
@@ -47,6 +49,7 @@ export default function ResultSection({
   const [startPoint, setStartPoint] = useState(null);
   const [currentBox, setCurrentBox] = useState(null);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
 
   const risk = Number(result?.result?.risk) || 0;
 
@@ -123,22 +126,102 @@ export default function ResultSection({
     if (e.button !== 0 || !drawing || !currentBox) return;
     const img = imageRef.current;
     if (!img) return;
-    const scaleX = img.naturalWidth / img.clientWidth;
-    const scaleY = img.naturalHeight / img.clientHeight;
+
+    // FIX: Simpan sebagai persentase (0.0 - 1.0) dari ukuran layar gambar saat itu
     const normalizedBox = {
-      x: currentBox.x * scaleX,
-      y: currentBox.y * scaleY,
-      width: currentBox.width * scaleX,
-      height: currentBox.height * scaleY,
+      x: currentBox.x / img.clientWidth,
+      y: currentBox.y / img.clientHeight,
+      width: currentBox.width / img.clientWidth,
+      height: currentBox.height / img.clientHeight,
     };
+
     setDoctorBoxes((prev) => [...prev, normalizedBox]);
     setDrawing(false);
     setStartPoint(null);
     setCurrentBox(null);
   };
 
+  const ImageRenderer = ({ isFull = false }) => (
+    // Wrapper luar buat nengahin gambar
+    <div
+      className={`flex justify-center bg-slate-900 rounded-xl overflow-hidden border border-slate-300 shadow-inner ${isFull ? "h-[85vh]" : "w-full"}`}
+    >
+      {/* Wrapper dalam yang UKURANNYA PAS NGUNCI GAMBAR biar kotak persentase akurat */}
+      <div
+        className="relative cursor-crosshair inline-block"
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onMouseMove={handleMouseMove}
+        onDragStart={(e) => e.preventDefault()}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <button
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsFullScreen(!isFullScreen);
+          }}
+          className="absolute top-4 right-4 z-50 bg-black/60 text-white p-2 rounded-lg hover:bg-black/80 transition-colors cursor-pointer"
+        >
+          {isFull ? <X size={20} /> : <Maximize2 size={20} />}
+        </button>
+
+        <img
+          ref={imageRef}
+          src={
+            showSegmentation && result?.segmentation_image
+              ? result.segmentation_image.startsWith("http")
+                ? result.segmentation_image
+                : `data:image/jpeg;base64,${result.segmentation_image}`
+              : imagePreview
+          }
+          alt="Medis"
+          draggable={false}
+          onLoad={() => setImageLoaded(true)}
+          className={`block select-none ${isFull ? "max-h-[85vh] w-auto" : "w-full h-auto max-h-[500px] object-contain"}`}
+        />
+
+        {/* FIX: Render pakai PERSENTASE (%) */}
+        {showDoctorBoxes &&
+          doctorBoxes.map((box, index) => (
+            <div
+              key={index}
+              className="absolute border-2 border-green-500 pointer-events-none bg-green-500/20"
+              style={{
+                left: `${box.x * 100}%`,
+                top: `${box.y * 100}%`,
+                width: `${box.width * 100}%`,
+                height: `${box.height * 100}%`,
+              }}
+            />
+          ))}
+
+        {currentBox && (
+          <div
+            className="absolute border-2 border-blue-400 border-dashed pointer-events-none bg-blue-400/20"
+            style={{
+              left: currentBox.x,
+              top: currentBox.y,
+              width: currentBox.width,
+              height: currentBox.height,
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="animate-fade-in">
+      {/* === MODAL FULLSCREEN GAMBAR === */}
+      {isFullScreen && (
+        <div className="fixed inset-0 z-[200] bg-black/90 flex flex-col items-center justify-center p-6 backdrop-blur-sm">
+          <ImageRenderer isFull={true} />
+          <p className="text-white/60 mt-4 text-sm">
+            Anda tetap dapat menggambar area pada mode layar penuh.
+          </p>
+        </div>
+      )}
       <div className="text-center mb-10">
         <h2 className="text-3xl font-bold text-slate-800">Hasil Analisis</h2>
         <p className="text-slate-500 mt-1">
@@ -153,71 +236,7 @@ export default function ResultSection({
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
           <div>
-            <div
-              className="relative bg-slate-900 rounded-xl overflow-hidden cursor-crosshair border border-slate-200 shadow-inner"
-              onMouseDown={handleMouseDown}
-              onMouseUp={handleMouseUp}
-              onMouseMove={handleMouseMove}
-              onDragStart={(e) => e.preventDefault()}
-              onContextMenu={(e) => e.preventDefault()}
-            >
-              {showSegmentation && result?.segmentation_image ? (
-                <img
-                  ref={imageRef}
-                  // FIX: Cek apakah ini URL (http) atau Base64
-                  src={
-                    result.segmentation_image.startsWith("http")
-                      ? result.segmentation_image
-                      : `data:image/jpeg;base64,${result.segmentation_image}`
-                  }
-                  alt="Segmentasi AI"
-                  draggable={false}
-                  onLoad={() => setImageLoaded(true)}
-                  className="w-full rounded-lg object-contain h-auto block select-none"
-                />
-              ) : (
-                <img
-                  ref={imageRef}
-                  src={imagePreview}
-                  alt="Original"
-                  draggable={false}
-                  onLoad={() => setImageLoaded(true)}
-                  className="w-full rounded-lg object-contain h-auto block select-none"
-                />
-              )}
-
-              {showDoctorBoxes &&
-                doctorBoxes.map((box, index) => {
-                  const img = imageRef.current;
-                  if (!img) return null;
-                  const scaleX = img.clientWidth / (img.naturalWidth || 1);
-                  const scaleY = img.clientHeight / (img.naturalHeight || 1);
-                  return (
-                    <div
-                      key={index}
-                      className="absolute border-2 border-green-500 pointer-events-none"
-                      style={{
-                        left: box.x * scaleX,
-                        top: box.y * scaleY,
-                        width: box.width * scaleX,
-                        height: box.height * scaleY,
-                      }}
-                    />
-                  );
-                })}
-
-              {currentBox && (
-                <div
-                  className="absolute border-2 border-blue-400 border-dashed pointer-events-none bg-blue-400/20"
-                  style={{
-                    left: currentBox.x,
-                    top: currentBox.y,
-                    width: currentBox.width,
-                    height: currentBox.height,
-                  }}
-                />
-              )}
-            </div>
+            <ImageRenderer isFull={false} />
 
             {/* KONTROL & LEGENDA DITENGAH KOTAK PUTIH */}
             <div className="mt-6 flex flex-col items-center justify-center bg-slate-50 p-5 rounded-2xl border border-slate-200">
@@ -384,7 +403,7 @@ export default function ResultSection({
             factors={result?.result?.risk_factors}
           />
           <div className="mt-5 border-t border-slate-100 pt-4">
-             <label className="block text-xl font-bold text-[#1e1b4b] mb-4 flex items-center gap-2">
+            <label className="block text-xl font-bold text-[#1e1b4b] mb-4 flex items-center gap-2">
               <User size={20} className="text-blue-600" /> Penilaian Risiko
               (Dokter):
             </label>
@@ -406,7 +425,7 @@ export default function ResultSection({
             content={`Approach: ${result?.result?.recommendation?.approach || "-"}\nTreatment: ${result?.result?.recommendation?.treatment || "-"}`}
           />
           <div className="mt-5 border-t border-slate-100 pt-4">
-             <label className="block text-xl font-bold text-[#1e1b4b] mb-4 flex items-center gap-2">
+            <label className="block text-xl font-bold text-[#1e1b4b] mb-4 flex items-center gap-2">
               <User size={20} className="text-blue-600" /> Rekomendasi
               Pengobatan (Dokter):
             </label>
