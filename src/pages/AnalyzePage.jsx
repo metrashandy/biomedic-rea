@@ -29,59 +29,65 @@ export default function AnalyzePage() {
   const resultsRef = useRef(null);
 
   const handleSaveDoctorLocal = async () => {
-  console.log("SAVE CLICKED");
-  console.log("RECORD ID:", recordId);
+    console.log("SAVE CLICKED");
+    console.log("RECORD ID:", recordId);
 
-  console.log("ID FINAL:", idToUse);
+    console.log("ID FINAL:", idToUse);
 
-  if (!idToUse) {
-    console.error("ID TIDAK ADA ❌");
-    return;
-  }
+    if (!idToUse) {
+      console.error("ID TIDAK ADA ❌");
+      return;
+    }
 
-  const formData = new FormData();
-  formData.append("doctor_notes", JSON.stringify(doctorNotes));
-  formData.append("doctor_bboxes", JSON.stringify(doctorBoxes));
+    const formData = new FormData();
+    formData.append("doctor_notes", JSON.stringify(doctorNotes));
+    formData.append("doctor_bboxes", JSON.stringify(doctorBoxes));
 
-  try {
-    const res = await fetch(`http://localhost:8000/api/records/${recordId}/doctor-update`, {
-      method: "PUT",
-      body: formData
-    });
+    try {
+      const res = await fetch(
+        `http://localhost:8000/api/records/${recordId}/doctor-update`,
+        {
+          method: "PUT",
+          body: formData,
+        },
+      );
+
+      if (!res.ok) {
+        console.error("SAVE ERROR:", await res.text());
+        return;
+      }
+
+      const data = await res.json();
+      console.log("SAVE SUCCESS:", data);
+    } catch (err) {
+      console.error("FETCH ERROR:", err);
+    }
+  };
+
+  const handleSaveDoctor = async () => {
+    console.log("SAVE CLICKED");
+
+    const formData = new FormData();
+    formData.append("doctor_notes", JSON.stringify(doctorNotes));
+    formData.append("doctor_bboxes", JSON.stringify(doctorBoxes));
+
+    const res = await fetch(
+      `http://localhost:8000/api/records/${recordId}/doctor-update`,
+      {
+        method: "PUT",
+        body: formData,
+      },
+    );
 
     if (!res.ok) {
-      console.error("SAVE ERROR:", await res.text());
+      const err = await res.text();
+      console.error("SAVE ERROR:", err);
       return;
     }
 
     const data = await res.json();
     console.log("SAVE SUCCESS:", data);
-  } catch (err) {
-    console.error("FETCH ERROR:", err);
-  }
-};
-
-  const handleSaveDoctor = async () => {
-  console.log("SAVE CLICKED");
-
-  const formData = new FormData();
-  formData.append("doctor_notes", JSON.stringify(doctorNotes));
-  formData.append("doctor_bboxes", JSON.stringify(doctorBoxes));
-
-  const res = await fetch(`http://localhost:8000/api/records/${recordId}/doctor-update`, {
-    method: "PUT",
-    body: formData
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    console.error("SAVE ERROR:", err);
-    return;
-  }
-
-  const data = await res.json();
-  console.log("SAVE SUCCESS:", data);
-};
+  };
 
   const resetForm = () => {
     setSelectedFile(null);
@@ -111,7 +117,10 @@ export default function AnalyzePage() {
       toast.error("Silakan upload gambar terlebih dahulu");
       return;
     }
-    if (!selectedPatientId) { toast.error("Pilih Pasien dulu!"); return; }
+    if (!selectedPatientId) {
+      toast.error("Pilih Pasien dulu!");
+      return;
+    }
     setLoading(true);
     setResult(null);
 
@@ -159,14 +168,14 @@ export default function AnalyzePage() {
 
   const handleExportPDF = () => {
     const record = {
-      result: result.result,                 // hasil AI
+      result: result.result, // hasil AI
       segmentation_image: result.segmentation_image,
 
       // 🔥 INI YANG PENTING
-      selectedFile: selectedFile,            // gambar asli (upload)
-      imagePreview: imagePreview,            // preview gambar
+      selectedFile: selectedFile, // gambar asli (upload)
+      imagePreview: imagePreview, // preview gambar
       doctorBoxes: doctorBoxes,
-      doctorNotes: doctorNotes,              // hasil gambar dokter
+      doctorNotes: doctorNotes, // hasil gambar dokter
 
       date: new Date().toLocaleDateString(),
     };
@@ -205,7 +214,7 @@ export default function AnalyzePage() {
   });
 
   return (
-    <div className="min-h-screen bg-sky-50">
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-slate-100 to-indigo-100 pb-12">
       <Header onReset={handleReset} />
 
       <motion.div
@@ -217,14 +226,15 @@ export default function AnalyzePage() {
         {!loading && !result && (
           <div className="max-w-3xl mx-auto">
             {/* Kotak Dropdown Jenis Pemeriksaan yang Rapi */}
-            <div className="mb-6 flex flex-col md:flex-row items-center justify-between gap-4 bg-sky-100 p-4 rounded-2xl border border-sky-200">
-              <label className="font-bold text-sky-900 flex items-center gap-2 whitespace-nowrap">
-                <Filter size={20} className="text-sky-600" /> Jenis Pemeriksaan:
+            <div className="mb-6 flex flex-col md:flex-row items-center justify-between gap-4 bg-white p-6 rounded-3xl shadow-lg shadow-slate-200/50 border border-indigo-100">
+              <label className="font-black text-[#1e1b4b] flex items-center gap-2 whitespace-nowrap uppercase tracking-wider text-sm">
+                <Filter size={20} className="text-indigo-500" /> Jenis
+                Pemeriksaan:
               </label>
               <select
                 value={analysisType}
                 onChange={(e) => setAnalysisType(e.target.value)}
-                className="bg-white border border-slate-300 text-slate-700 py-2.5 px-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm w-full md:w-72 font-semibold cursor-pointer"
+                className="w-full md:w-72 p-3 border-2 border-slate-100 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all cursor-pointer"
               >
                 {CATEGORIES.map((cat, idx) => (
                   <option key={idx} value={cat}>
@@ -234,14 +244,14 @@ export default function AnalyzePage() {
               </select>
             </div>
 
-            <div className="mb-4 max-w-3xl mx-auto bg-white p-4 rounded-xl border border-slate-200">
-              <label className="block mb-2 font-bold text-slate-700">
+            <div className="mb-8 max-w-3xl mx-auto bg-white p-6 rounded-3xl border border-indigo-100 shadow-lg shadow-slate-200/50">
+              <label className="block mb-3 font-black text-[#1e1b4b] text-sm uppercase tracking-wider">
                 Pilih Pasien:
               </label>
               <select
                 value={selectedPatientId}
                 onChange={(e) => setSelectedPatientId(e.target.value)}
-                className="w-full p-2 border rounded-lg shadow-sm"
+                className="w-full p-3 border-2 border-slate-100 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all cursor-pointer"
               >
                 <option value="">-- Pilih Pasien dari Database --</option>
                 {patients.map((p) => (
@@ -295,21 +305,21 @@ export default function AnalyzePage() {
         )}
 
         {/* RESULT SECTION */}
-          {result && (
-            <ResultSection
-              result={result}
-              imagePreview={imagePreview}
-              onReset={handleReset}
-              onExport={handleExportPDF}
-              exporting={exporting}
-              setDoctorBoxes={setDoctorBoxes}
-              doctorBoxes={doctorBoxes}
-              doctorNotes={doctorNotes}
-              setDoctorNotes={setDoctorNotes}
-              analysisType={analysisType}
-              handleSaveDoctorLocal={()=>handleSaveDoctorLocal()}
-            />
-          )}
+        {result && (
+          <ResultSection
+            result={result}
+            imagePreview={imagePreview}
+            onReset={handleReset}
+            onExport={handleExportPDF}
+            exporting={exporting}
+            setDoctorBoxes={setDoctorBoxes}
+            doctorBoxes={doctorBoxes}
+            doctorNotes={doctorNotes}
+            setDoctorNotes={setDoctorNotes}
+            analysisType={analysisType}
+            handleSaveDoctorLocal={() => handleSaveDoctorLocal()}
+          />
+        )}
       </motion.div>
     </div>
   );

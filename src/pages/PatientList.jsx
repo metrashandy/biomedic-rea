@@ -27,14 +27,14 @@ export default function PatientList() {
       console.log("Sedang mencoba menghubungi Backend..."); // Liat di Console (F12)
       try {
         const response = await fetch("http://127.0.0.1:8000/api/patients");
-        
+
         if (!response.ok) {
-           throw new Error(`Server Error: ${response.status}`);
+          throw new Error(`Server Error: ${response.status}`);
         }
-        
+
         const data = await response.json();
         console.log("Data diterima:", data);
-        
+
         if (data.status === "success") {
           setPatients(data.data);
         }
@@ -72,7 +72,7 @@ export default function PatientList() {
   };
 
   return (
-    <div className="min-h-screen bg-sky-50">
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-slate-100 to-indigo-100 pb-12">
       <Header />
 
       <motion.div
@@ -82,8 +82,8 @@ export default function PatientList() {
       >
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
           <div>
-            <h2 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
-              <Users className="text-blue-600" size={32} />
+            <h2 className="text-3xl font-black text-[#1e1b4b] flex items-center gap-3">
+              <div className="w-2 h-8 bg-indigo-600 rounded-full"></div>
               Daftar Pasien
             </h2>
             <p className="text-slate-500 mt-2">
@@ -111,7 +111,7 @@ export default function PatientList() {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[800px]">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                <tr className="bg-[#1e1b4b] text-white border-b-4 border-indigo-500 shadow-md">
                   <th className="p-4 font-semibold">No RM</th>
                   <th className="p-4 font-semibold">Nama Lengkap</th>
                   {/* Kita asumsikan backend mengirim data umur & gender, kalau tidak ada nanti kita update API-nya */}
@@ -147,11 +147,10 @@ export default function PatientList() {
                       </td>
                       <td className="p-4 text-center">
                         <button
-                          // Arahkan ke ID asli dari database
                           onClick={() =>
                             navigate(`/patient/${patient.id_pasien}`)
                           }
-                          className="flex items-center justify-center gap-1 bg-white border border-slate-300 hover:border-blue-500 hover:text-blue-600 px-4 py-2 rounded-lg font-medium w-full transition-all shadow-sm"
+                          className="flex items-center justify-center gap-2 bg-indigo-50 text-indigo-700 border border-indigo-100 hover:bg-indigo-600 hover:text-white px-4 py-2 rounded-xl font-bold w-full transition-all shadow-sm"
                         >
                           Detail <ChevronRight size={16} />
                         </button>

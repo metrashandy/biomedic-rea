@@ -801,9 +801,20 @@ async def analyze_xray(
         y = int(bbox["y"] * h)
         bw = int(bbox["width"] * w)
         bh = int(bbox["height"] * h)
-
         overlay = draw_boxes(overlay, [(x, y, bw, bh)])
             
+    # ✅ TAMBAHAN: SIMPAN GAMBAR HASIL KOTAK MERAH KE FOLDER
+    file_name_hasil = f"hasil_{uuid.uuid4().hex}.jpg"
+    file_path_hasil = os.path.join(IMG_DIR, file_name_hasil)
+    # Convert RGB to BGR untuk OpenCV save
+    cv2.imwrite(file_path_hasil, cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
+
+    # ================== UPDATE DATABASE ==================
+    # Kita update baris yang udah dibuat di atas dengan gambar hasil
+    analisis_baru = db.query(models.Analisis).filter(models.Analisis.gambar_asli == file_path).first()
+    if analisis_baru:
+        analisis_baru.gambar_hasil = file_path_hasil
+        db.commit()
 
     # ================== FINAL ==================
     overlay = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)
@@ -811,7 +822,7 @@ async def analyze_xray(
     
     # ================== RETURN ==================
     return {
-        "record_id":new_anal.id_analisis,
+        "record_id": analisis_baru.id_analisis if analisis_baru else None,
         "result": ai_result,
         "segmentation_image": base64_img
     }
@@ -1290,6 +1301,26 @@ def reset_analysis(id_analisis: int, db: Session = Depends(get_db)):
         analisis.gambar_hasil = None
         db.commit()
         return {"msg": "Data direset, silakan refresh halaman Detail di React"}
+
+@app.put("/api/records/{id_analisis}/doctor-update")
+async def update_doctor_data(
+    id_analisis: int,
+    doctor_notes: Optional[str] = Form(None),
+    doctor_bboxes: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
+    analisis = db.query(models.Analisis).filter(models.Analisis.id_analisis == id_analisis).first()
+    if not analisis:
+        raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+
+    # Simpan langsung karena dari frontend sudah berupa JSON string
+    if doctor_notes:
+        analisis.doctor_notes = doctor_notes
+    if doctor_bboxes:
+        analisis.doctor_bboxes = doctor_bboxes
+
+    db.commit()
+    return {"status": "success"}
     
 def get_clean_url(path):
     if not path: return None

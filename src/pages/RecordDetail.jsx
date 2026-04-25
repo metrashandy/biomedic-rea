@@ -91,6 +91,25 @@ export default function RecordDetail() {
       setExporting(false);
     }
   };
+  // 🔥 TAMBAHAN: FUNGSI UNTUK MENYIMPAN CATATAN DOKTER DI HALAMAN RECORD
+  const handleSaveDoctor = async () => {
+    const formData = new FormData();
+    formData.append("doctor_notes", JSON.stringify(doctorNotes));
+    formData.append("doctor_bboxes", JSON.stringify(doctorBoxes));
+
+    try {
+      await fetch(
+        `http://127.0.0.1:8000/api/records/${recordId}/doctor-update`,
+        {
+          method: "PUT",
+          body: formData,
+        },
+      );
+      toast.success("Catatan Dokter Berhasil Disimpan!");
+    } catch (e) {
+      toast.error("Gagal menyimpan catatan dokter");
+    }
+  };
 
   if (isLoading) {
     return (
@@ -149,6 +168,7 @@ export default function RecordDetail() {
           // Tambahkan prop ini buat fallback image di ResultSection
           isHistoryMode={true}
           historyImage={data.gambar_hasil_url || data.gambar_asli_url}
+          handleSaveDoctorLocal={handleSaveDoctor}
         />
       </motion.main>
     </div>
