@@ -29,6 +29,9 @@ export default function RecordDetail() {
   });
 
   useEffect(() => {
+     setDoctorNotes({ temuan: "", penyakit: "", risiko: "", rekomendasi: "" });
+    setDoctorBoxes([]);
+    setIsLoading(true);
     const fetchRecordDetail = async () => {
       try {
         const response = await fetch(

@@ -82,24 +82,42 @@ export const exportToPDF = async (
     yPos += imgH + 10;
   };
 
+  // ================= GENERATE DOCTOR IMAGE =================
   const generateDoctorImage = (imageSrc, boxes) => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.src = imageSrc;
+      if (!imageSrc.startsWith("data:")) {
+        img.crossOrigin = "Anonymous";
+      }
+
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        canvas.width = img.width;
-        canvas.height = img.height;
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0);
-        ctx.strokeStyle = "green";
-        ctx.lineWidth = 5;
-        boxes.forEach((box) =>
-          ctx.strokeRect(box.x, box.y, box.width, box.height),
-        );
-        resolve(canvas.toDataURL("image/jpeg"));
+
+        // 🔥 FIX: TAMBAHIN FILLSTYLE & STROKESTYLE
+        ctx.strokeStyle = "#10B981"; // Emerald-500
+        ctx.fillStyle = "rgba(16, 185, 129, 0.25)"; // Emerald-500 dengan 25% transparansi
+        ctx.lineWidth = Math.max(4, img.naturalWidth * 0.005);
+
+        boxes.forEach((box) => {
+          // Asumsi box sudah dalam format { x, y, width, height }
+          ctx.strokeRect(box.x, box.y, box.width, box.height);
+          ctx.fillRect(box.x, box.y, box.width, box.height); // <--- INI YG BIKIN ADA ISI HIJAUNYA
+        });
+
+        resolve(canvas.toDataURL("image/jpeg", 0.9));
       };
+      
+      img.onerror = () => {
+        console.error("Gagal memuat gambar untuk canvas dokter");
+        reject("Gagal load gambar canvas");
+      };
+
+      img.src = imageSrc;
     });
   };
 
@@ -185,42 +203,45 @@ export const exportToPDF = async (
       renderImage(docImgBase64);
     }
 
-    // 4. Analisis Teks (Pemisahan Berdasarkan includeAI)
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
+    // --- 4. CATATAN & DIAGNOSIS RESMI DOKTER (DIUTAMAKAN) ---
+    doc.setFont("helvetica", "bold"); doc.setFontSize(14);
+    doc.text("Catatan & Diagnosis Resmi Dokter", margin, yPos); yPos += 8;
 
+    const section = (title) => { doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text(title, margin, yPos); yPos += 6; };
+
+    addWrappedText(`Temuan Dokter:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctorNotes?.temuan || "-");
+    addWrappedText(`Diagnosis Penyakit:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctorNotes?.penyakit || "-");
+    addWrappedText(`Evaluasi Risiko:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctorNotes?.risiko || "-");
+    addWrappedText(`Rekomendasi / Tindakan:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctorNotes?.rekomendasi || "-");
+    
+    doc.setDrawColor(200); doc.line(margin, yPos, pageWidth - margin, yPos); yPos += 8;
+
+    // --- 5. ANALISIS KLINIS AI (SEBAGAI PENUNJANG) ---
     if (includeAI) {
-      doc.text("Analisis Klinis (Sistem AI)", margin, yPos);
-      yPos += 8;
-      addWrappedText("Temuan Klinis AI:", { isBold: true, fontSize: 11 });
+      doc.setFont("helvetica", "bold"); doc.setFontSize(14);
+      doc.text("Analisis Klinis (Sistem AI)", margin, yPos); yPos += 8;
+      
+      section("1. Temuan AI");
       addWrappedText(item.result?.findings || item.ai_result?.findings || "-");
-      addWrappedText(
-        `Tingkat Risiko: ${item.result?.risk || item.ai_result?.risk || 0}%`,
-        { isBold: true },
-      );
-      yPos += 5;
+
+      section("2. Potensi Kelainan AI");
+      addWrappedText(item.result?.abnormality || item.ai_result?.abnormality || "-");
+
+      section("3. Tingkat Risiko AI");
+      addWrappedText(`Overall Risk: ${item.result?.risk || item.ai_result?.risk || 0}%`);
+
+      section("4. Rekomendasi AI");
+      const rec = item.result?.recommendation || item.ai_result?.recommendation;
+      addWrappedText(`Pendekatan: ${rec?.approach || "-"}`);
+      addWrappedText(`Penanganan: ${rec?.treatment || "-"}`);
+      yPos += 4;
     }
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.text("Catatan & Diagnosis Resmi Dokter", margin, yPos);
-    yPos += 8;
-    addWrappedText(`Temuan Dokter:`, { isBold: true, fontSize: 11 });
-    addWrappedText(item.doctorNotes?.temuan || "-");
-    addWrappedText(`Diagnosis Penyakit:`, { isBold: true, fontSize: 11 });
-    addWrappedText(item.doctorNotes?.penyakit || "-");
-    addWrappedText(`Evaluasi Risiko:`, { isBold: true, fontSize: 11 });
-    addWrappedText(item.doctorNotes?.risiko || "-");
-    addWrappedText(`Rekomendasi / Tindakan:`, { isBold: true, fontSize: 11 });
-    addWrappedText(item.doctorNotes?.rekomendasi || "-");
-
-    doc.line(margin, yPos, pageWidth - margin, yPos);
-    yPos += 5;
-    addWrappedText(
-      "Dokumen ini sah dan merupakan bagian dari rekam medis pasien.",
-      { fontSize: 9, color: [100, 100, 100] },
-    );
+    // --- 6. DISCLAIMER ---
+    doc.setDrawColor(200); doc.line(margin, yPos, pageWidth - margin, yPos); yPos += 6;
+    addWrappedText("Dokumen ini sah dan merupakan bagian dari rekam medis pasien. Hasil AI hanya sebagai penunjang dan tidak menggantikan diagnosis medis profesional.", { fontSize: 8, color: [100, 100, 100] });
   }
 
-  doc.save(`Laporan_Medis_${new Date().getTime()}.pdf`);
+  const fileName = patientData ? `Laporan_${patientData.nama_pasien}.pdf` : `Laporan_Medis_${new Date().getTime()}.pdf`;
+  doc.save(fileName);
 };

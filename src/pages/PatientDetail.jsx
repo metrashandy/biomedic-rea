@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   FileText,
   Info,
+  X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
@@ -47,6 +48,9 @@ export default function PatientDetail() {
   const [history, setHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState("Semua Kategori");
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [downloadMode, setDownloadMode] = useState(null); // 'single' atau 'resume'
+  const [selectedRecord, setSelectedRecord] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
   const [showUploadMode, setShowUploadMode] = useState(false);
@@ -67,6 +71,53 @@ export default function PatientDetail() {
   useEffect(() => {
     fetchPatientData();
   }, [id]);
+
+  const triggerResumeDownload = () => {
+    if (history.length === 0) return toast.error("Belum ada riwayat medis");
+    setDownloadMode("resume");
+    setShowDownloadModal(true);
+  };
+
+  const triggerSingleDownload = (record) => {
+    setSelectedRecord(record);
+    setDownloadMode("single");
+    setShowDownloadModal(true);
+  };
+
+  const processDownload = async (withAI) => {
+    setShowDownloadModal(false);
+    setIsDownloading(true);
+    const toastId = toast.loading(
+      downloadMode === "resume"
+        ? "Menyusun Resume Gabungan..."
+        : "Menyiapkan Laporan...",
+    );
+
+    try {
+      if (downloadMode === "resume") {
+        const dataToPrint =
+          activeCategory === "Semua Kategori"
+            ? history
+            : history.filter((r) => r.type === activeCategory);
+        await exportToPDF(dataToPrint, patient, withAI);
+      } else {
+        const dataToPrint = {
+          ai_result: selectedRecord.ai_result,
+          gambar_asli_url: selectedRecord.imgUrl,
+          gambar_hasil_url: selectedRecord.gambar_hasil_url, // <--- Data AI sekarang dikirim!
+          date: selectedRecord.date,
+          doctorNotes: selectedRecord.doctor_notes || {},
+          doctorBoxes: selectedRecord.doctor_bboxes || [],
+        };
+        await exportToPDF(dataToPrint, patient, withAI);
+      }
+      toast.success("PDF berhasil diunduh!", { id: toastId });
+    } catch (e) {
+      toast.error("Gagal membuat PDF", { id: toastId });
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   const fetchPatientData = async () => {
     try {
@@ -186,6 +237,54 @@ export default function PatientDetail() {
     // BACKGROUND GRADASI: Sky Blue (Muda) -> Slate -> Indigo (Ungu Navy)
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-slate-100 to-indigo-100 pb-12">
       <Header showBack={true} onBack={() => navigate("/patients")} />
+      {/* --- POP-UP MODAL DOWNLOAD --- */}
+      {showDownloadModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl relative border border-slate-200">
+            <button
+              onClick={() => setShowDownloadModal(false)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-red-500 transition-colors"
+            >
+              <X size={24} />
+            </button>
+            <h3 className="text-2xl font-black text-[#1e1b4b] mb-2">
+              Format Laporan PDF
+            </h3>
+            <p className="text-slate-500 mb-8 font-medium">
+              Pilih informasi apa yang ingin Anda masukkan ke dalam dokumen
+              cetak.
+            </p>
+
+            <div className="space-y-4">
+              <button
+                onClick={() => processDownload(true)}
+                className="w-full p-5 border-2 border-indigo-500 bg-indigo-50 hover:bg-indigo-100 rounded-2xl text-left transition-all shadow-sm"
+              >
+                <p className="font-black text-indigo-700 text-lg">
+                  Laporan Lengkap (AI + Dokter)
+                </p>
+                <p className="text-sm text-indigo-600/80 mt-1 font-medium">
+                  Mencakup semua hasil analisis otomatis AI dan catatan evaluasi
+                  manual dokter.
+                </p>
+              </button>
+
+              <button
+                onClick={() => processDownload(false)}
+                className="w-full p-5 border-2 border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 rounded-2xl text-left transition-all shadow-sm"
+              >
+                <p className="font-black text-slate-800 text-lg">
+                  Laporan Resmi (Khusus Dokter)
+                </p>
+                <p className="text-sm text-slate-500 mt-1 font-medium">
+                  Menyembunyikan analisis AI. Hanya menampilkan gambar asli,
+                  area hijau, dan catatan resmi dokter.
+                </p>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <motion.div
         initial={{ opacity: 0 }}
@@ -223,6 +322,8 @@ export default function PatientDetail() {
               onClick={() => {
                 setShowUploadMode(!showUploadMode);
                 setUploadResult(null);
+                setDoctorNotes({ temuan: "", penyakit: "", risiko: "", rekomendasi: "" });
+                setDoctorBoxes([]);
               }}
               className={`flex items-center justify-center gap-2 px-6 py-3 rounded-2xl font-black transition-all shadow-lg ${showUploadMode ? "bg-red-500 text-white hover:bg-red-600" : "bg-sky-400 text-slate-900 hover:bg-sky-300"}`}
             >
@@ -238,7 +339,7 @@ export default function PatientDetail() {
             </button>
             {!showUploadMode && history.length > 0 && (
               <button
-                onClick={handleDownloadResume}
+                onClick={triggerResumeDownload}
                 disabled={isDownloading}
                 className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black hover:bg-indigo-500 transition-all shadow-lg disabled:opacity-70 border border-indigo-400/50"
               >
@@ -462,7 +563,7 @@ export default function PatientDetail() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleSingleDownload(record);
+                              triggerSingleDownload(record);
                             }}
                             className="flex items-center gap-2 bg-white text-slate-700 border-2 border-slate-200 px-5 py-2.5 rounded-xl font-bold hover:bg-slate-50 transition-all text-xs shadow-sm hover:border-sky-300"
                           >

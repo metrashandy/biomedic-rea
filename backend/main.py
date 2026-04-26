@@ -30,28 +30,40 @@ from starlette.responses import Response
 
 # Perintah ini yang akan mengeksekusi pembuatan file medis.db & tabelnya
 models.Base.metadata.create_all(bind=engine)
-def seed_data():
+def seed_everything():
     db = SessionLocal()
-    # Tambah 3 Dokter jika kosong
-    if db.query(models.Pemeriksaan).count() == 0: # Cek simpel
-        for i in range(1, 4):
-            # Asumsi lu ada tabel Dokter, kalo nggak ada lewati aja
-            pass 
-
-    # Tambah 10 Pasien jika kosong
+    # Seed Pasien Lengkap
     if db.query(models.Pasien).count() == 0:
-        nama_pasien = ["Budi Santoso", "Siti Aminah", "Ahmad Wijaya", "Rina Kartika", 
-                       "Dewi Lestari", "Eko Prasetyo", "Andi Hermawan", "Sari Maya", 
-                       "Rully Hidayat", "Lina Marlina"]
-        for i, nama in enumerate(nama_pasien):
-            new_p = models.Pasien(no_rm=f"RM-00{i+1}", nama_pasien=nama)
-            db.add(new_p)
+        data_pasien =[
+            {"nama": "Budi Santoso", "umur": 45, "gender": "Laki-laki", "goldar": "O+"},
+            {"nama": "Siti Aminah", "umur": 32, "gender": "Perempuan", "goldar": "A+"},
+            {"nama": "Ahmad Wijaya", "umur": 58, "gender": "Laki-laki", "goldar": "B+"},
+            {"nama": "Rina Kartika", "umur": 29, "gender": "Perempuan", "goldar": "AB+"},
+            {"nama": "Dewi Lestari", "umur": 41, "gender": "Perempuan", "goldar": "O-"},
+            {"nama": "Eko Prasetyo", "umur": 55, "gender": "Laki-laki", "goldar": "A-"},
+            {"nama": "Andi Hermawan", "umur": 37, "gender": "Laki-laki", "goldar": "B+"},
+            {"nama": "Sari Maya", "umur": 24, "gender": "Perempuan", "goldar": "O+"},
+            {"nama": "Rully Hidayat", "umur": 62, "gender": "Laki-laki", "goldar": "AB-"},
+            {"nama": "Lina Marlina", "umur": 50, "gender": "Perempuan", "goldar": "A+"},
+        ]
+        for i, p in enumerate(data_pasien):
+            db.add(models.Pasien(
+                no_rm=f"RM-00{i+1}", 
+                nama_pasien=p["nama"],
+                umur=p["umur"],
+                gender=p["gender"],
+                blood_type=p["goldar"]
+            ))
+        print("✅ SEED: 10 Pasien Lengkap Berhasil Dibuat.")
+    
+    # Seed Jenis Pemeriksaan
     if db.query(models.Jenis).count() == 0:
-        kategori = ["X-Ray", "MRI", "CT Scan", "Endoscopy", "Ultrasound", "EKG", "EEG"]
+        kategori =["X-Ray", "MRI", "CT Scan", "Endoscopy", "Ultrasound", "EKG", "EEG", "Fundus Retina"]
         for k in kategori:
             db.add(models.Jenis(nama_jenis=k))
-        print("SEED: Kategori pemeriksaan berhasil dibuat.")
-        db.commit()
+        print("✅ SEED: Kategori pemeriksaan berhasil dibuat.")
+    
+    db.commit()
     db.close()
 
 
@@ -833,22 +845,22 @@ class PasienCreate(BaseModel):
     nama_pasien: str
 
 # 1. API UNTUK NAMBAH PASIEN (CREATE)
-@app.post("/api/patients")
-def create_patient(pasien: PasienCreate, db: Session = Depends(get_db)):
-    # Cek apakah no_rm sudah ada
-    db_pasien = db.query(models.Pasien).filter(models.Pasien.no_rm == pasien.no_rm).first()
-    if db_pasien:
-        raise HTTPException(status_code=400, detail="Nomor RM sudah terdaftar")
+@app.get("/api/patients")
+def get_all_patients(db: Session = Depends(get_db)):
+    patients = db.query(models.Pasien).all()
     
-    new_pasien = models.Pasien(
-        no_rm=pasien.no_rm,
-        nama_pasien=pasien.nama_pasien
-    )
-    db.add(new_pasien)
-    db.commit()
-    db.refresh(new_pasien)
-    
-    return {"message": "Pasien berhasil ditambahkan", "data": new_pasien}
+    result =[]
+    for p in patients:
+        result.append({
+            "id_pasien": p.id_pasien,
+            "no_rm": p.no_rm,
+            "nama_pasien": p.nama_pasien,
+            "age": p.umur,             # <-- Map ke 'age' biar sama kayak React lu
+            "gender": p.gender,
+            "bloodType": p.blood_type  # <-- Map ke 'bloodType'
+        })
+        
+    return {"status": "success", "data": result}
 
 # 2. API UNTUK MENGAMBIL LIST SEMUA PASIEN (READ)
 @app.get("/api/patients")
@@ -921,39 +933,38 @@ async def save_analysis(
 # ==========================================
 @app.get("/api/patients/{id_pasien}")
 def get_patient_detail(id_pasien: int, db: Session = Depends(get_db)):
-    # Cari pasien
     pasien = db.query(models.Pasien).filter(models.Pasien.id_pasien == id_pasien).first()
-    if not pasien:
-        raise HTTPException(status_code=404, detail="Pasien tidak ditemukan")
+    if not pasien: raise HTTPException(status_code=404)
     
-    # Ambil semua pemeriksaan & analisis milik pasien ini
-    pemeriksaan_list = db.query(models.Pemeriksaan).filter(models.Pemeriksaan.id_pasien == id_pasien).all()
+    # Format data pasien biar lengkap pas ditarik ke halaman Detail
+    patient_data = {
+        "id_pasien": pasien.id_pasien,
+        "no_rm": pasien.no_rm,
+        "nama_pasien": pasien.nama_pasien,
+        "age": pasien.umur,
+        "gender": pasien.gender,
+        "bloodType": pasien.blood_type
+    }
     
     history =[]
-    for pem in pemeriksaan_list:
-        for anal in pem.analisis:
-            # Ambil nama jenis (X-Ray, MRI, dll)
-            jenis = db.query(models.Jenis).filter(models.Jenis.id_jenis == anal.id_jenis).first()
-            nama_jenis = jenis.nama_jenis if jenis else "Lainnya"
-
-            history.append({
-                "id_record": anal.id_analisis, # Ini ID untuk dibuka di halaman RecordDetail
-                "id_pemeriksaan": pem.id_pemeriksaan,
-                "type": nama_jenis,
-                "date": pem.tgl_pemeriksaan.strftime("%d %b %Y"),
-                "imgUrl": get_clean_url(anal.gambar_asli), # URL gambar asli
-                # Cek apakah sudah dianalisis AI atau belum
-                "is_analyzed": True if anal.teks_hasil_analisis else False,
-                "ai_result": json.loads(anal.teks_hasil_analisis) if anal.teks_hasil_analisis else None  
-            })
+    records = db.query(models.Analisis).join(models.Pemeriksaan).filter(models.Pemeriksaan.id_pasien == id_pasien).all()
+    
+    for r in records:
+        history.append({
+            "id_record": r.id_analisis,
+            "type": r.jenis.nama_jenis if r.jenis else "Umum",
+            "date": r.pemeriksaan.tgl_pemeriksaan.strftime("%d %b %Y"),
+            "imgUrl": get_clean_url(r.gambar_asli),
+            "is_analyzed": bool(r.teks_hasil_analisis),
+            "ai_result": json.loads(r.teks_hasil_analisis) if r.teks_hasil_analisis else None,
+            "doctor_notes": json.loads(r.doctor_notes) if r.doctor_notes else None,
+            "doctor_bboxes": json.loads(r.doctor_bboxes) if r.doctor_bboxes else [],
+            "gambar_hasil_url": get_clean_url(r.gambar_hasil)
+        })
             
     return {
-        "status": "success",
-        "patient": {
-            "id_pasien": pasien.id_pasien,
-            "no_rm": pasien.no_rm,
-            "nama_pasien": pasien.nama_pasien
-        },
+        "status": "success", 
+        "patient": patient_data, 
         "history": history
     }
 # ==========================================
@@ -1316,4 +1327,4 @@ def get_clean_url(path):
 
 # ================== SEEDING DATA DUMMY ==================
 
-seed_data()
+seed_everything()

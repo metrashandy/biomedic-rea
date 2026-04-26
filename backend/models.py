@@ -9,6 +9,11 @@ class Pasien(Base):
     id_pasien = Column(Integer, primary_key=True, index=True)
     no_rm = Column(String, unique=True, index=True)
     nama_pasien = Column(String)
+    
+    # --- TAMBAHAN BARU ---
+    umur = Column(Integer, nullable=True)
+    gender = Column(String, nullable=True)
+    blood_type = Column(String, nullable=True)
 
     # Relasi ke tabel pemeriksaan
     pemeriksaan = relationship("Pemeriksaan", back_populates="pasien")
