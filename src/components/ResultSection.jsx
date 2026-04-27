@@ -51,8 +51,6 @@ export default function ResultSection({
   const [imageLoaded, setImageLoaded] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
-  const risk = Number(result?.result?.risk) || 0;
-
   const getDynamicDescription = () => {
     const type = (analysisType || "X-Ray").toLowerCase();
     let mod = "citra medis";
@@ -210,7 +208,7 @@ export default function ResultSection({
       </div>
     </div>
   );
-
+  const risk = Number(result?.result?.risk) || 0;
   return (
     <div className="animate-fade-in">
       {/* === MODAL FULLSCREEN GAMBAR === */}

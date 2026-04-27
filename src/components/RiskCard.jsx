@@ -1,19 +1,33 @@
 import { Activity } from "lucide-react";
 
 export default function RiskCard({ percentage, factors }) {
+  const getRiskCategory = (risk) => {
+    if (risk > 70) return "Berat";
+    if (risk > 30) return "Sedang";
+    return "Ringan";
+  };
+
+  const getRiskColor = (risk) => {
+    if (risk > 70) return "text-red-600";
+    if (risk > 30) return "text-yellow-500";
+    return "text-green-600";
+  };
+
   const safePercentage = Number(percentage) || 0;
+  const category = getRiskCategory(safePercentage);
+  const color = getRiskColor(safePercentage);
 
   const riskColor =
     safePercentage > 70
       ? "bg-red-500"
-      : safePercentage > 40
+      : safePercentage > 30
         ? "bg-yellow-500"
         : "bg-green-500";
 
   const riskTextColor =
     safePercentage > 70
       ? "text-red-600"
-      : safePercentage > 40
+      : safePercentage > 30
         ? "text-yellow-600"
         : "text-green-600";
 
@@ -31,9 +45,13 @@ export default function RiskCard({ percentage, factors }) {
         ></div>
       </div>
 
-      <p className={`mt-2 font-bold text-2xl ${riskTextColor}`}>
-        {safePercentage}%
-      </p>
+      <div className="flex flex-col items-start">
+        <p className={`text-2xl font-bold ${color}`}>{percentage}%</p>
+        <p className="mt-1 text-lg font-semibold text-slate-700">
+          Kategori:{" "}
+          <span className={`ml-2 text-xl font-bold ${color}`}>{category}</span>
+        </p>
+      </div>
 
       {factors && (
         <div className="mt-4 text-sm text-slate-600 space-y-1">
