@@ -142,16 +142,15 @@ export default function ResultSection({
   };
 
   const ImageRenderer = ({ isFull = false }) => (
-    // Wrapper luar buat nengahin gambar
     <div
       className={`flex justify-center bg-slate-900 rounded-xl overflow-hidden border border-slate-300 shadow-inner ${isFull ? "h-[85vh]" : "w-full"}`}
     >
-      {/* Wrapper dalam yang UKURANNYA PAS NGUNCI GAMBAR biar kotak persentase akurat */}
       <div
-        className="relative cursor-crosshair inline-block"
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
-        onMouseMove={handleMouseMove}
+        className={`relative inline-block ${isFull ? "cursor-default" : "cursor-crosshair"}`}
+        // Fungsi ngegambar tetap DIMATIKAN saat isFull (Zoom)
+        onMouseDown={isFull ? undefined : handleMouseDown}
+        onMouseUp={isFull ? undefined : handleMouseUp}
+        onMouseMove={isFull ? undefined : handleMouseMove}
         onDragStart={(e) => e.preventDefault()}
         onContextMenu={(e) => e.preventDefault()}
       >
@@ -181,7 +180,7 @@ export default function ResultSection({
           className={`block select-none ${isFull ? "max-h-[85vh] w-auto" : "w-full h-auto max-h-[500px] object-contain"}`}
         />
 
-        {/* FIX: Render pakai PERSENTASE (%) */}
+        {/* 🔥 FIX: Kotak Hijau Dokter SEKARANG TETAP MUNCUL walaupun di-zoom (isFull dilepas dari sini) */}
         {showDoctorBoxes &&
           doctorBoxes.map((box, index) => (
             <div
@@ -196,7 +195,8 @@ export default function ResultSection({
             />
           ))}
 
-        {currentBox && (
+        {/* Preview garis biru putus-putus (hanya muncul pas lagi ngegambar, disembunyikan pas zoom) */}
+        {!isFull && currentBox && (
           <div
             className="absolute border-2 border-blue-400 border-dashed pointer-events-none bg-blue-400/20"
             style={{

@@ -209,10 +209,10 @@ export const exportToPDF = async (
 
     const section = (title) => { doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text(title, margin, yPos); yPos += 6; };
 
-    addWrappedText(`Temuan Dokter:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctorNotes?.temuan || "-");
-    addWrappedText(`Diagnosis Penyakit:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctorNotes?.penyakit || "-");
-    addWrappedText(`Evaluasi Risiko:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctorNotes?.risiko || "-");
-    addWrappedText(`Rekomendasi / Tindakan:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctorNotes?.rekomendasi || "-");
+    addWrappedText(`Temuan Dokter:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctor_notes?.temuan || "-");
+    addWrappedText(`Diagnosis Penyakit:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctor_notes?.penyakit || "-");
+    addWrappedText(`Evaluasi Risiko:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctor_notes?.risiko || "-");
+    addWrappedText(`Rekomendasi / Tindakan:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctor_notes?.rekomendasi || "-");
     
     doc.setDrawColor(200); doc.line(margin, yPos, pageWidth - margin, yPos); yPos += 8;
 
