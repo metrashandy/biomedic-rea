@@ -32,7 +32,7 @@ from starlette.responses import Response
 models.Base.metadata.create_all(bind=engine)
 def seed_everything():
     db = SessionLocal()
-    # Seed Pasien Lengkap
+    # Seed 10 Pasien Lengkap
     if db.query(models.Pasien).count() == 0:
         data_pasien =[
             {"nama": "Budi Santoso", "umur": 45, "gender": "Laki-laki", "goldar": "O+"},
@@ -47,24 +47,19 @@ def seed_everything():
             {"nama": "Lina Marlina", "umur": 50, "gender": "Perempuan", "goldar": "A+"},
         ]
         for i, p in enumerate(data_pasien):
-            db.add(models.Pasien(
-                no_rm=f"RM-00{i+1}", 
-                nama_pasien=p["nama"],
-                umur=p["umur"],
-                gender=p["gender"],
-                blood_type=p["goldar"]
-            ))
+            db.add(models.Pasien(no_rm=f"RM-00{i+1}", nama_pasien=p["nama"], umur=p["umur"], gender=p["gender"], blood_type=p["goldar"]))
         print("✅ SEED: 10 Pasien Lengkap Berhasil Dibuat.")
     
-    # Seed Jenis Pemeriksaan
+    # Seed CUMA 3 Jenis Pemeriksaan!
     if db.query(models.Jenis).count() == 0:
-        kategori =["X-Ray", "MRI", "CT Scan", "Endoscopy", "Ultrasound", "EKG", "EEG", "Fundus Retina"]
+        kategori =["X-Ray", "CT Scan", "Retina Scan"]
         for k in kategori:
             db.add(models.Jenis(nama_jenis=k))
-        print("✅ SEED: Kategori pemeriksaan berhasil dibuat.")
+        print("✅ SEED: 3 Kategori pemeriksaan berhasil dibuat.")
     
     db.commit()
     db.close()
+
 
 
 # ================== INIT APP ==================
@@ -668,11 +663,13 @@ async def analyze_xray(
     """
     analysis_type = analysis_type.lower().strip()
     
-    if "xray" in analysis_type:
+    tipe_lower = analysis_type.lower().strip()
+    
+    if "xray" in tipe_lower or "x-ray" in tipe_lower:
         prompt = prompt_xray
-    elif "fundus" in analysis_type or "retina" in analysis_type:
+    elif "fundus" in tipe_lower or "retina" in tipe_lower:
         prompt = prompt_fundus
-    elif "ct" in analysis_type:
+    elif "ct" in tipe_lower:
         prompt = prompt_ct
     else:
         prompt = prompt_xray
@@ -727,8 +724,21 @@ async def analyze_xray(
         db.flush() 
 
         # Cari ID Jenis (X-Ray, dll)
-        jenis_db = db.query(models.Jenis).filter(models.Jenis.nama_jenis == analysis_type).first()
-        id_j = jenis_db.id_jenis if jenis_db else 1
+        # Cari ID Jenis (Anti-Case Sensitive)
+        tipe_bersih = analysis_type.strip()
+        jenis_db = db.query(models.Jenis).filter(models.Jenis.nama_jenis.ilike(tipe_bersih)).first()
+        
+        if jenis_db:
+            id_j = jenis_db.id_jenis
+        else:
+            # FIX SUPER AMAN: Kalau kategorinya beneran nggak ada di DB, BIKIN BARU! 
+            # Jadi gak bakal pernah balik ke X-Ray (ID 1) lagi.
+            print(f"Kategori '{tipe_bersih}' belum ada di DB. Membuat kategori baru...")
+            kategori_baru = models.Jenis(nama_jenis=tipe_bersih)
+            db.add(kategori_baru)
+            db.commit()
+            db.refresh(kategori_baru)
+            id_j = kategori_baru.id_jenis
 
         new_anal = models.Analisis(
             id_pemeriksaan=new_pem.id_pemeriksaan,

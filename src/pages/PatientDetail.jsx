@@ -25,19 +25,7 @@ import UploadForm from "../components/UploadForm";
 import ResultSection from "../components/ResultSection";
 import { exportToPDF } from "../services/pdfExport";
 
-const CATEGORIES = [
-  "X-Ray",
-  "MRI",
-  "CT Scan",
-  "Endoscopy",
-  "Ultrasound",
-  "EKG",
-  "EEG",
-  "Fundus Retina",
-  "Echo",
-  "Cathlab",
-  "Spirometri",
-];
+const CATEGORIES = ["X-Ray", "CT Scan", "Retina Scan"];
 
 export default function PatientDetail() {
   const { id } = useParams();
@@ -140,7 +128,7 @@ export default function PatientDetail() {
     const formData = new FormData();
     formData.append("image", selectedFile);
     formData.append("symptoms", symptoms);
-    formData.append("analysis_type", analysisType);
+    formData.append("analysis_type", analysisType); 
     formData.append("id_pasien", id);
 
     try {

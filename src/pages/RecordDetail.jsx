@@ -18,6 +18,7 @@ export default function RecordDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  
 
   // States untuk menampung data dari ResultSection
   const [doctorBoxes, setDoctorBoxes] = useState([]);
@@ -58,6 +59,7 @@ export default function RecordDetail() {
 
     fetchRecordDetail();
   }, [recordId]);
+
 
   // ========================================================
   // 🔥 INI DIA PEMANGGILAN FUNGSI PDF NYA (YANG TADI GUE LUPA)
@@ -203,6 +205,7 @@ export default function RecordDetail() {
           doctorNotes={doctorNotes}
           setDoctorNotes={setDoctorNotes}
           analysisType="X-Ray"
+          handleSaveDoctorLocal={handleSaveDoctor}
         />
       </motion.main>
     </div>
