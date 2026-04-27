@@ -51,7 +51,7 @@ def seed_everything():
     
     # Seed CUMA 3 Jenis Pemeriksaan!
     if db.query(models.Jenis).count() == 0:
-        kategori =["X-Ray", "CT Scan", "Retina Scan"]
+        kategori =["X-Ray", "CT Scan", "Retina Scan", "Endoscopy"]
         for k in kategori:
             db.add(models.Jenis(nama_jenis=k))
         print("✅ SEED: 3 Kategori pemeriksaan berhasil dibuat.")
@@ -218,7 +218,10 @@ async def analyze_xray(
     #base64_img = to_base64(overlay)
     
     # ================== OPENAI ==================
-    image_base64 = base64.b64encode(contents).decode("utf-8")
+    buffered = io.BytesIO()
+    pil_image.save(buffered, format="JPEG")
+    image_base64 = base64.b64encode(buffered.getvalue()).decode()
+    mime_type = "image/jpeg"
 
     tipe_lower = analysis_type.lower().strip()
 
@@ -231,7 +234,7 @@ async def analyze_xray(
     elif "ct" in tipe_lower:
         prompt = get_prompt_ct(detail_level)
 
-    elif "endo" in tipe_lower:
+    elif "endoscopy" in tipe_lower:
         prompt = get_prompt_endoscopy(detail_level)
 
     else:
@@ -240,6 +243,8 @@ async def analyze_xray(
     if symptoms:
         symptoms_en = translate_to_english(symptoms)
         prompt += f"\nPatient symptoms: {symptoms_en}\n"
+        
+    mime_type = image.content_type  # otomatis ambil dari upload
     
     response = client.responses.create(
         model="gpt-5.4-mini",
@@ -250,7 +255,7 @@ async def analyze_xray(
                     {"type": "input_text", "text": prompt},
                     {
                         "type": "input_image",
-                        "image_url": f"data:image/jpeg;base64,{image_base64}"
+                        "image_url": f"data:{mime_type};base64,{image_base64}"
                     }
                 ]
             }

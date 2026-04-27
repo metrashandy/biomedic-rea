@@ -17,7 +17,7 @@ import {
   FileText,
   Info,
   X,
-  AlignLeft
+  AlignLeft,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
@@ -26,7 +26,7 @@ import UploadForm from "../components/UploadForm";
 import ResultSection from "../components/ResultSection";
 import { exportToPDF } from "../services/pdfExport";
 
-const CATEGORIES = ["X-Ray", "CT Scan", "Retina Scan"];
+const CATEGORIES = ["X-Ray", "CT Scan", "Retina Scan", "Endoscopy"];
 
 export default function PatientDetail() {
   const { id } = useParams();
@@ -130,7 +130,7 @@ export default function PatientDetail() {
     const formData = new FormData();
     formData.append("image", selectedFile);
     formData.append("symptoms", symptoms);
-    formData.append("analysis_type", analysisType); 
+    formData.append("analysis_type", analysisType);
     formData.append("id_pasien", id);
     formData.append("detail_level", detailLevel);
 
@@ -313,7 +313,12 @@ export default function PatientDetail() {
               onClick={() => {
                 setShowUploadMode(!showUploadMode);
                 setUploadResult(null);
-                setDoctorNotes({ temuan: "", penyakit: "", risiko: "", rekomendasi: "" });
+                setDoctorNotes({
+                  temuan: "",
+                  penyakit: "",
+                  risiko: "",
+                  rekomendasi: "",
+                });
                 setDoctorBoxes([]);
               }}
               className={`flex items-center justify-center gap-2 px-6 py-3 rounded-2xl font-black transition-all shadow-lg ${showUploadMode ? "bg-red-500 text-white hover:bg-red-600" : "bg-sky-400 text-slate-900 hover:bg-sky-300"}`}
@@ -397,30 +402,46 @@ export default function PatientDetail() {
                       Upload Citra Medis Baru
                     </h3>
                   </div>
-                 {/* BUNGKUS DENGAN GRID AGAR KIRI-KANAN (SEJAJAR) */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                       {/* Dropdown 1: Jenis Pemeriksaan */}
-                       <div>
-                         <label className="block mb-2 font-black text-slate-700 text-sm uppercase tracking-wider flex items-center gap-2">
-                           <FileText size={16} className="text-sky-500"/> Jenis Pemeriksaan:
-                         </label>
-                         <select value={analysisType} onChange={(e) => setAnalysisType(e.target.value)} className="w-full p-4 border-2 border-slate-200 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all cursor-pointer">
-                            {CATEGORIES.map((c, i) => <option key={i} value={c}>{c}</option>)}
-                         </select>
-                       </div>
-
-                       {/* Dropdown 2: Detail Level Laporan */}
-                       <div>
-                         <label className="block mb-2 font-black text-slate-700 text-sm uppercase tracking-wider flex items-center gap-2">
-                           <AlignLeft size={16} className="text-sky-500"/> Tingkat Detail Laporan AI:
-                         </label>
-                         <select value={detailLevel} onChange={(e) => setDetailLevel(e.target.value)} className="w-full p-4 border-2 border-slate-200 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all cursor-pointer">
-                            <option value="short">Pendek (Ringkas & Cepat)</option>
-                            <option value="medium">Sedang (Standar Diagnostik)</option>
-                            <option value="long">Panjang (Sangat Detail)</option>
-                         </select>
-                       </div>
+                  {/* BUNGKUS DENGAN GRID AGAR KIRI-KANAN (SEJAJAR) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    {/* Dropdown 1: Jenis Pemeriksaan */}
+                    <div>
+                      <label className="block mb-2 font-black text-slate-700 text-sm uppercase tracking-wider flex items-center gap-2">
+                        <FileText size={16} className="text-sky-500" /> Jenis
+                        Pemeriksaan:
+                      </label>
+                      <select
+                        value={analysisType}
+                        onChange={(e) => setAnalysisType(e.target.value)}
+                        className="w-full p-4 border-2 border-slate-200 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all cursor-pointer"
+                      >
+                        {CATEGORIES.map((c, i) => (
+                          <option key={i} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
                     </div>
+
+                    {/* Dropdown 2: Detail Level Laporan */}
+                    <div>
+                      <label className="block mb-2 font-black text-slate-700 text-sm uppercase tracking-wider flex items-center gap-2">
+                        <AlignLeft size={16} className="text-sky-500" /> Tingkat
+                        Detail Laporan AI:
+                      </label>
+                      <select
+                        value={detailLevel}
+                        onChange={(e) => setDetailLevel(e.target.value)}
+                        className="w-full p-4 border-2 border-slate-200 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all cursor-pointer"
+                      >
+                        <option value="short">Pendek (Ringkas & Cepat)</option>
+                        <option value="medium">
+                          Sedang (Standar Diagnostik)
+                        </option>
+                        <option value="long">Panjang (Sangat Detail)</option>
+                      </select>
+                    </div>
+                  </div>
                   <UploadForm
                     selectedFile={selectedFile}
                     setSelectedFile={setSelectedFile}
