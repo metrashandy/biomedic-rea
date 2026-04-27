@@ -191,6 +191,7 @@ async def analyze_xray(
     symptoms: Optional[str] = Form(None),
     analysis_type: Optional[str] = Form("xray"),  # ✅ TAMBAHKAN INI
     id_pasien: int = Form(...), # <--- Tambah ini
+    detail_level: str = Form("medium"),
     db: Session = Depends(get_db)
 ):  
     
@@ -215,7 +216,7 @@ async def analyze_xray(
     # ================== OPENAI ==================
     image_base64 = base64.b64encode(contents).decode("utf-8")
 
-    prompt_xray = """
+    prompt_xray = f"""
     Analyze this chest X-ray image.
 
     Focus ONLY on lung fields.
@@ -224,6 +225,29 @@ async def analyze_xray(
     - heart (cardiac silhouette)
     - bones
     - diaphragm
+
+    ------------------------
+    DETAIL LEVEL CONTROL
+    ------------------------
+    The output detail level is: {detail_level}
+
+    Rules:
+
+    IF detail_level == "short":
+    - Findings: 1–2 sentences
+    - Abnormality: max 1 disease
+    - Recommendation: 1 sentence per section
+
+    IF detail_level == "medium":
+    - Findings: 3–5 sentences
+    - Abnormality: 1–2 diseases
+    - Recommendation: 2 sentences per section
+
+    IF detail_level == "long":
+    - Findings: 8 sentences
+    - Abnormality: 2–3 diseases
+    - Recommendation: 4 sentences per section
+    - Add more explanation and reasoning
 
     ------------------------
     TASK
@@ -238,7 +262,7 @@ async def analyze_xray(
     FINDINGS RULES
     ------------------------
     - Write in detailed radiology narrative style
-    - Minimum 3–5 sentences
+    - Must follow the selected detail level
     - Must read like a professional radiology report
     - Include:
     - location (left/right, upper/middle/lower zone)
@@ -250,12 +274,13 @@ async def analyze_xray(
     Normal case:
     - Clearly state lungs appear normal
     - Avoid uncertain or speculative language
-    
+
     - Use semi-technical language (mix of medical + easy explanation)
     - Avoid overly complex terminology
     - Make it understandable for non-medical users
 
     ABNORMALITY RULES:
+    - Must follow the selected detail level (jumlah penyakit)
     - Must list 1–3 most likely diseases
     - Use numbered format:
 
@@ -275,6 +300,7 @@ async def analyze_xray(
 
     - If normal:
     "Tidak ditemukan kelainan yang signifikan pada paru-paru"
+
     ------------------------
     BOUNDING BOX RULES
     ------------------------
@@ -299,6 +325,7 @@ async def analyze_xray(
     RECOMMENDATION RULES
     ------------------------
     - Write in natural, patient-friendly clinical explanation
+    - Must follow the selected detail level
     - Avoid overly formal or textbook language
     - Must feel like a doctor explaining to a patient
 
@@ -318,10 +345,6 @@ async def analyze_xray(
     - Explain what might be happening in the body
     - Explain what the patient should do next
     - Give practical and understandable advice
-
-    Length:
-    - Each part must be 2–3 sentences
-    - Total should feel explanatory, not robotic
 
     Risk-based behavior:
 
@@ -347,24 +370,24 @@ async def analyze_xray(
     ------------------------
     Return ONLY valid JSON. No explanation, no markdown.
 
-    {
+    {{
     "findings": "...",
     "abnormality": "...",
     "risk": 0-100,
-    "risk_factors": {
+    "risk_factors": {{
         "area": "...",
         "region_count": "...",
         "intensity": "...",
         "calculation": "..."
-    },
+    }},
     "bboxes": [
-        {"x": 0-1, "y": 0-1, "width": 0-1, "height": 0-1}
+        {{"x": 0-1, "y": 0-1, "width": 0-1, "height": 0-1}}
     ],
-    "recommendation": {
+    "recommendation": {{
         "approach": "...",
         "treatment": "..."
-    }
-    }
+    }}
+    }}
     """
     
     
@@ -1008,88 +1031,179 @@ async def get_record_detail(id_analisis: int, db: Session = Depends(get_db)):
         analysis_type = jenis.nama_jenis.lower() if jenis else "xray"
 
         # --- PROMPT DARI TEMEN LO ---
-        prompt_xray = """
-        Analyze this chest X-ray image.
-        Focus ONLY on lung fields.
-        Do NOT analyze:
-        - heart (cardiac silhouette)
-        - bones
-        - diaphragm
-        ------------------------
-        TASK
-        ------------------------
-        1. Identify visible abnormalities in lung regions
-        2. Describe findings in professional radiology style
-        3. Estimate risk level
-        4. Suggest most likely disease (NOT definitive diagnosis)
-        5. Provide clinical recommendation
-        ------------------------
-        FINDINGS RULES
-        ------------------------
-        - Write in detailed radiology narrative style
-        - Minimum 3–5 sentences
-        - Must read like a professional radiology report
-        - Include: location, pattern, severity
-        - Explain findings clearly (not bullet-like)
-        - Use natural medical language flow
-        Normal case:
-        - Clearly state lungs appear normal
-        - Avoid uncertain or speculative language
-        - Use semi-technical language
-        - Avoid overly complex terminology
-        - Make it understandable for non-medical users
-        ABNORMALITY RULES:
-        - Must list 1–3 most likely diseases
-        - Use numbered format
-        - Each disease must include: medical name, simple explanation in layman terms
-        - If normal: "Tidak ditemukan kelainan yang signifikan pada paru-paru"
-        ------------------------
-        BOUNDING BOX RULES
-        ------------------------
-        - Detect ALL suspicious regions
-        - Maximum 5 boxes
-        - Must be tight and minimal
-        - Avoid healthy areas
-        - Coordinates normalized (0–1)
-        - If normal: return empty[]
-        ------------------------
-        RISK ESTIMATION
-        ------------------------
-        - Range: 0–100
-        - Based on: affected area, number of regions, opacity intensity
-        - Provide simple explainable reasoning
-        ------------------------
-        RECOMMENDATION RULES
-        ------------------------
-        - Write in natural, patient-friendly clinical explanation
-        - Avoid overly formal or textbook language
-        Structure:
-        1. Approach
-        2. Treatment
-        Tone: Calm, informative, and helpful
-        ------------------------
-        OUTPUT FORMAT
-        ------------------------
-        Return ONLY valid JSON. No explanation, no markdown.
-        {
-        "findings": "...",
-        "abnormality": "...",
-        "risk": 0-100,
-        "risk_factors": {
-            "area": "...",
-            "region_count": "...",
-            "intensity": "...",
-            "calculation": "..."
-        },
-        "bboxes":[
-            {"x": 0-1, "y": 0-1, "width": 0-1, "height": 0-1}
-        ],
-        "recommendation": {
-            "approach": "...",
-            "treatment": "..."
-        }
-        }
-        """
+        prompt_xray = f"""
+    Analyze this chest X-ray image.
+
+    Focus ONLY on lung fields.
+
+    Do NOT analyze:
+    - heart (cardiac silhouette)
+    - bones
+    - diaphragm
+
+    ------------------------
+    DETAIL LEVEL CONTROL
+    ------------------------
+    The output detail level is: {detail_level}
+
+    Rules:
+
+    IF detail_level == "short":
+    - Findings: 1–2 sentences
+    - Abnormality: max 1 disease
+    - Recommendation: 1 sentence per section
+
+    IF detail_level == "medium":
+    - Findings: 3–5 sentences
+    - Abnormality: 1–2 diseases
+    - Recommendation: 2 sentences per section
+
+    IF detail_level == "long":
+    - Findings: 5–7 sentences
+    - Abnormality: 2–3 diseases
+    - Recommendation: 2–3 sentences per section
+    - Add more explanation and reasoning
+
+    ------------------------
+    TASK
+    ------------------------
+    1. Identify visible abnormalities in lung regions
+    2. Describe findings in professional radiology style
+    3. Estimate risk level
+    4. Suggest most likely disease (NOT definitive diagnosis)
+    5. Provide clinical recommendation
+
+    ------------------------
+    FINDINGS RULES
+    ------------------------
+    - Write in detailed radiology narrative style
+    - Must follow the selected detail level
+    - Must read like a professional radiology report
+    - Include:
+    - location (left/right, upper/middle/lower zone)
+    - pattern (linear, patchy, diffuse)
+    - severity (mild/moderate/severe)
+    - Explain findings clearly (not bullet-like)
+    - Use natural medical language flow
+
+    Normal case:
+    - Clearly state lungs appear normal
+    - Avoid uncertain or speculative language
+
+    - Use semi-technical language (mix of medical + easy explanation)
+    - Avoid overly complex terminology
+    - Make it understandable for non-medical users
+
+    ABNORMALITY RULES:
+    - Must follow the selected detail level (jumlah penyakit)
+    - Must list 1–3 most likely diseases
+    - Use numbered format:
+
+    Example:
+    1. Pneumonia (infeksi paru-paru)
+    → Penjelasan sederhana
+
+    2. Tuberculosis (TBC)
+    → Penjelasan sederhana
+
+    - Each disease must include:
+    - medical name
+    - simple explanation in layman terms (Indonesian-friendly)
+
+    - Avoid technical terms without explanation
+    - If using medical terms (e.g. atelectasis), MUST explain meaning in simple language
+
+    - If normal:
+    "Tidak ditemukan kelainan yang signifikan pada paru-paru"
+
+    ------------------------
+    BOUNDING BOX RULES
+    ------------------------
+    - Detect ALL suspicious regions
+    - Maximum 5 boxes
+    - Must be tight and minimal
+    - Avoid healthy areas
+    - Coordinates normalized (0–1)
+    - If normal: return empty []
+
+    ------------------------
+    RISK ESTIMATION
+    ------------------------
+    - Range: 0–100
+    - Based on:
+    - affected area
+    - number of regions
+    - opacity intensity (low/medium/high)
+    - Provide simple explainable reasoning
+
+    ------------------------
+    RECOMMENDATION RULES
+    ------------------------
+    - Write in natural, patient-friendly clinical explanation
+    - Must follow the selected detail level
+    - Avoid overly formal or textbook language
+    - Must feel like a doctor explaining to a patient
+
+    Structure:
+    - Use 2 parts:
+    1. Approach (penjelasan kondisi & langkah selanjutnya)
+    2. Treatment (opsi penanganan)
+
+    Style:
+    - Use simple and clear language
+    - Avoid phrases like:
+    "korelasi klinis dianjurkan"
+    "penatalaksanaan harus dipandu"
+    - Replace with more natural explanations
+
+    Content:
+    - Explain what might be happening in the body
+    - Explain what the patient should do next
+    - Give practical and understandable advice
+
+    Risk-based behavior:
+
+    LOW RISK:
+    - Reassure the user
+    - Suggest monitoring only
+    - No urgent tone
+
+    MEDIUM RISK:
+    - Suggest follow-up if symptoms persist
+    - Explain why monitoring is needed
+
+    HIGH RISK:
+    - Suggest immediate medical attention
+    - Explain possible seriousness clearly
+
+    Tone:
+    - Calm, informative, and helpful
+    - Not too technical, not too casual
+
+    ------------------------
+    OUTPUT FORMAT
+    ------------------------
+    Return ONLY valid JSON. No explanation, no markdown.
+
+    {{
+    "findings": "...",
+    "abnormality": "...",
+    "risk": 0-100,
+    "risk_factors": {{
+        "area": "...",
+        "region_count": "...",
+        "intensity": "...",
+        "calculation": "..."
+    }},
+    "bboxes": [
+        {{"x": 0-1, "y": 0-1, "width": 0-1, "height": 0-1}}
+    ],
+    "recommendation": {{
+        "approach": "...",
+        "treatment": "..."
+    }}
+    }}
+    """
         
         prompt_fundus = """
         Analyze this retinal fundus image.

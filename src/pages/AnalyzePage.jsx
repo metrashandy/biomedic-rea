@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Scan, Filter } from "lucide-react";
+import { Scan, Filter, AlignLeft, FileText } from "lucide-react";
 import toast from "react-hot-toast";
 import { exportToPDF } from "../services/pdfExport";
 import { useParams } from "react-router-dom";
@@ -23,6 +23,7 @@ export default function AnalyzePage() {
   const [patients, setPatients] = useState([]);
   const [selectedPatientId, setSelectedPatientId] = useState("");
   const [recordId, setRecordId] = useState(null);
+  const [detailLevel, setDetailLevel] = useState("medium"); // <--- STATE BARU
   const { id } = useParams();
   const idToUse = result?.record_id;
 
@@ -129,6 +130,7 @@ export default function AnalyzePage() {
     formData.append("symptoms", symptoms);
     formData.append("analysis_type", analysisType);
     formData.append("id_pasien", selectedPatientId);
+    formData.append("detail_level", detailLevel);
 
     try {
       const response = await fetch("http://127.0.0.1:8000/analyze", {
@@ -226,22 +228,43 @@ export default function AnalyzePage() {
         {!loading && !result && (
           <div className="max-w-3xl mx-auto">
             {/* Kotak Dropdown Jenis Pemeriksaan yang Rapi */}
-            <div className="mb-6 flex flex-col md:flex-row items-center justify-between gap-4 bg-white p-6 rounded-3xl shadow-lg shadow-slate-200/50 border border-indigo-100">
-              <label className="font-black text-[#1e1b4b] flex items-center gap-2 whitespace-nowrap uppercase tracking-wider text-sm">
-                <Filter size={20} className="text-indigo-500" /> Jenis
-                Pemeriksaan:
-              </label>
-              <select
-                value={analysisType}
-                onChange={(e) => setAnalysisType(e.target.value)}
-                className="w-full md:w-72 p-3 border-2 border-slate-100 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all cursor-pointer"
-              >
-                {CATEGORIES.map((cat, idx) => (
-                  <option key={idx} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
+            {/* BUNGKUS DENGAN GRID AGAR KIRI-KANAN (SEJAJAR) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              {/* Dropdown 1: Jenis Pemeriksaan */}
+              <div>
+                <label className="block mb-2 font-black text-slate-700 text-sm uppercase tracking-wider flex items-center gap-2">
+                  <FileText size={16} className="text-sky-500" /> Jenis
+                  Pemeriksaan:
+                </label>
+                <select
+                  value={analysisType}
+                  onChange={(e) => setAnalysisType(e.target.value)}
+                  className="w-full p-4 border-2 border-slate-200 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all cursor-pointer"
+                >
+                  {CATEGORIES.map((c, i) => (
+                    <option key={i} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Dropdown 2: Detail Level Laporan */}
+              <div>
+                <label className="block mb-2 font-black text-slate-700 text-sm uppercase tracking-wider flex items-center gap-2">
+                  <AlignLeft size={16} className="text-sky-500" /> Tingkat
+                  Detail Laporan AI:
+                </label>
+                <select
+                  value={detailLevel}
+                  onChange={(e) => setDetailLevel(e.target.value)}
+                  className="w-full p-4 border-2 border-slate-200 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all cursor-pointer"
+                >
+                  <option value="short">Pendek (Ringkas & Cepat)</option>
+                  <option value="medium">Sedang (Standar Diagnostik)</option>
+                  <option value="long">Panjang (Sangat Detail)</option>
+                </select>
+              </div>
             </div>
 
             <div className="mb-8 max-w-3xl mx-auto bg-white p-6 rounded-3xl border border-indigo-100 shadow-lg shadow-slate-200/50">
