@@ -1,7 +1,12 @@
 import jsPDF from "jspdf";
 
+// =====================================================
+// HELPER: Ambil base64 dari URL atau File/Blob object
+// =====================================================
 const getImageData = async (source) => {
   if (!source) return null;
+
+  // Kalau source adalah File/Blob object (dari input upload)
   if (typeof source !== "string") {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -9,65 +14,88 @@ const getImageData = async (source) => {
       reader.readAsDataURL(source);
     });
   }
-  const resp = await fetch(source);
-  const blob = await resp.blob();
+
+  // Kalau sudah base64 langsung return
+  if (source.startsWith("data:")) return source;
+
+  // Kalau URL → fetch dulu
+  try {
+    const resp = await fetch(source);
+    if (!resp.ok) return null;
+    const blob = await resp.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.warn("Gagal fetch gambar:", source, e);
+    return null;
+  }
+};
+
+// =====================================================
+// HELPER: Generate gambar dokter dari base image + bbox
+// Dipakai sebagai FALLBACK kalau gambar_dokter_url tidak ada
+// bbox format: { x, y, width, height } semua normalized (0.0 - 1.0)
+// =====================================================
+const generateDoctorImageFromBoxes = (imageSrc, boxes) => {
   return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.readAsDataURL(blob);
+    if (!imageSrc || !boxes || boxes.length === 0) {
+      resolve(null);
+      return;
+    }
+
+    const img = new Image();
+    if (!imageSrc.startsWith("data:")) {
+      img.crossOrigin = "Anonymous";
+    }
+
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+
+      // Gambar base image
+      ctx.drawImage(img, 0, 0);
+
+      // Gambar kotak hijau dokter
+      ctx.strokeStyle = "#10B981"; // green
+      ctx.fillStyle = "rgba(16, 185, 129, 0.2)";
+      ctx.lineWidth = Math.max(3, img.naturalWidth * 0.004);
+
+      boxes.forEach((box) => {
+        // ✅ Konversi normalized (0.0-1.0) ke pixel
+        const x = box.x * img.naturalWidth;
+        const y = box.y * img.naturalHeight;
+        const w = box.width * img.naturalWidth;
+        const h = box.height * img.naturalHeight;
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeRect(x, y, w, h);
+      });
+
+      resolve(canvas.toDataURL("image/jpeg", 0.92));
+    };
+
+    img.onerror = () => {
+      console.warn("Gagal load gambar untuk generate doctor boxes");
+      resolve(null);
+    };
+
+    img.src = imageSrc;
   });
 };
 
-export const exportToPDF = async (
-  records,
-  patientData = null,
-  includeAI = true, // <--- PARAMETER BARU (Default True)
-) => {
-  const dataToPrint = Array.isArray(records) ? records : [records];
-  const doc = new jsPDF("p", "mm", "a4");
-  const margin = 15;
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const usableWidth = pageWidth - 2 * margin;
-
-  const cleanText = (text) =>
-    text
-      ?.toString()
-      .replace(/\n/g, " ")
-      .replace(/\r/g, " ")
-      .replace(/\t/g, " ")
-      .replace(/[^ -~]+/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-
-  let yPos = 20;
-  const addWrappedText = (text, options = {}) => {
-    const {
-      isBold = false,
-      fontSize = 11,
-      color = [0, 0, 0],
-      spacing = 5,
-    } = options;
-    doc.setFont("helvetica", isBold ? "bold" : "normal");
-    doc.setFontSize(fontSize);
-    doc.setTextColor(...color);
-    const lines = doc.splitTextToSize(cleanText(text || "-"), usableWidth);
-    lines.forEach((line) => {
-      if (yPos > pageHeight - margin) {
-        doc.addPage();
-        yPos = margin;
-      }
-      doc.text(line, margin, yPos);
-      yPos += 6;
-    });
-    yPos += spacing;
-  };
-
-  const renderImage = (base64Img, format = "JPEG") => {
-    if (!base64Img) return;
+// =====================================================
+// HELPER: Render gambar ke PDF dengan proporsi terjaga
+// =====================================================
+const renderImageToPDF = (doc, base64Img, margin, pageWidth, pageHeight, yPos) => {
+  if (!base64Img) return yPos;
+  try {
     const imgProps = doc.getImageProperties(base64Img);
-    const maxWidth = 110;
-    const maxHeight = 80;
+    const maxWidth = pageWidth - 2 * margin;
+    const maxHeight = 100;
     let imgW = maxWidth;
     let imgH = (imgProps.height * imgW) / imgProps.width;
     if (imgH > maxHeight) {
@@ -78,170 +106,217 @@ export const exportToPDF = async (
       doc.addPage();
       yPos = margin;
     }
-    doc.addImage(base64Img, format, (pageWidth - imgW) / 2, yPos, imgW, imgH);
-    yPos += imgH + 10;
+    doc.addImage(base64Img, "JPEG", (pageWidth - imgW) / 2, yPos, imgW, imgH);
+    yPos += imgH + 8;
+  } catch (e) {
+    console.warn("Gagal render gambar ke PDF:", e);
+  }
+  return yPos;
+};
+
+// =====================================================
+// MAIN EXPORT FUNCTION
+//
+// includeAI = true  → Laporan Lengkap: Gambar Asli + Gambar AI + Gambar Dokter + Analisis AI + Catatan Dokter
+// includeAI = false → Laporan Dokter:  Gambar Asli + Gambar Dokter ONLY + Catatan Dokter (no AI stuff)
+// =====================================================
+export const exportToPDF = async (records, patientData = null, includeAI = true) => {
+  const dataToPrint = Array.isArray(records) ? records : [records];
+  const doc = new jsPDF("p", "mm", "a4");
+  const margin = 15;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const usableWidth = pageWidth - 2 * margin;
+
+  // Bersihkan teks dari karakter aneh
+  const cleanText = (text) =>
+    text?.toString()
+      .replace(/\n/g, " ").replace(/\r/g, " ").replace(/\t/g, " ")
+      .replace(/[^ -~\u00C0-\u024F]+/g, "")
+      .replace(/\s+/g, " ").trim() || "-";
+
+  let yPos = 20;
+
+  const checkPage = () => {
+    if (yPos > pageHeight - margin) {
+      doc.addPage();
+      yPos = margin;
+    }
   };
 
-  // ================= GENERATE DOCTOR IMAGE =================
-  const generateDoctorImage = (imageSrc, boxes) => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      if (!imageSrc.startsWith("data:")) {
-        img.crossOrigin = "Anonymous";
-      }
-
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-
-        // 🔥 FIX: TAMBAHIN FILLSTYLE & STROKESTYLE
-        ctx.strokeStyle = "#10B981"; // Emerald-500
-        ctx.fillStyle = "rgba(16, 185, 129, 0.25)"; // Emerald-500 dengan 25% transparansi
-        ctx.lineWidth = Math.max(4, img.naturalWidth * 0.005);
-
-        boxes.forEach((box) => {
-          // Asumsi box sudah dalam format { x, y, width, height }
-          ctx.strokeRect(box.x, box.y, box.width, box.height);
-          ctx.fillRect(box.x, box.y, box.width, box.height); // <--- INI YG BIKIN ADA ISI HIJAUNYA
-        });
-
-        resolve(canvas.toDataURL("image/jpeg", 0.9));
-      };
-      
-      img.onerror = () => {
-        console.error("Gagal memuat gambar untuk canvas dokter");
-        reject("Gagal load gambar canvas");
-      };
-
-      img.src = imageSrc;
+  const addText = (text, { isBold = false, fontSize = 11, color = [30, 30, 30], spacing = 4 } = {}) => {
+    doc.setFont("helvetica", isBold ? "bold" : "normal");
+    doc.setFontSize(fontSize);
+    doc.setTextColor(...color);
+    const lines = doc.splitTextToSize(cleanText(text), usableWidth);
+    lines.forEach((line) => {
+      checkPage();
+      doc.text(line, margin, yPos);
+      yPos += 6;
     });
+    yPos += spacing;
   };
 
+  const addSectionTitle = (text) => {
+    checkPage();
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(30, 30, 120);
+    doc.text(text, margin, yPos);
+    yPos += 8;
+  };
+
+  const addDivider = () => {
+    checkPage();
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margin, yPos, pageWidth - margin, yPos);
+    yPos += 8;
+  };
+
+  // ===================== LOOP TIAP RECORD =====================
   for (let i = 0; i < dataToPrint.length; i++) {
     const item = dataToPrint[i];
-    if (i > 0) {
-      doc.addPage();
-      yPos = 20;
-    }
+    if (i > 0) { doc.addPage(); yPos = 20; }
 
+    // ── HEADER ──────────────────────────────────────────────
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
-    doc.text("LAPORAN RADIOLOGI MEDIS", pageWidth / 2, yPos, {
-      align: "center",
-    });
-    yPos += 10;
+    doc.setTextColor(20, 20, 80);
+    doc.text("LAPORAN RADIOLOGI MEDIS", pageWidth / 2, yPos, { align: "center" });
+    yPos += 8;
 
-    doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(80, 80, 80);
     if (patientData) {
       doc.text(
-        `Pasien: ${patientData.nama_pasien} (${patientData.no_rm})`,
-        pageWidth / 2,
-        yPos,
-        { align: "center" },
+        `Pasien: ${patientData.nama_pasien || "-"}   |   No. RM: ${patientData.no_rm || "-"}`,
+        pageWidth / 2, yPos, { align: "center" }
       );
       yPos += 5;
     }
     doc.text(
-      `Tanggal Pemeriksaan: ${item.date || new Date().toLocaleDateString()}`,
-      pageWidth / 2,
-      yPos,
-      { align: "center" },
+      `Tanggal: ${item.date || new Date().toLocaleDateString("id-ID")}`,
+      pageWidth / 2, yPos, { align: "center" }
     );
-    yPos += 15;
+    yPos += 12;
+    addDivider();
 
-    // 1. Gambar Asli
-    let originalSource =
+    // ── SECTION GAMBAR ───────────────────────────────────────
+    addSectionTitle(includeAI ? "A. Dokumentasi Citra Medis" : "A. Dokumentasi Citra");
+
+    // Resolve sumber gambar original
+    const originalSrc =
       item.selectedFile ||
       item.imagePreview ||
       item.gambar_asli_url ||
-      item.original_image;
-    if (!originalSource && item.segmentation_image)
-      originalSource = `data:image/jpeg;base64,${item.segmentation_image}`;
+      item.original_image ||
+      null;
 
-    const originalImgBase64 = await getImageData(originalSource);
-    if (originalImgBase64) {
-      doc.setFont("helvetica", "bold");
-      doc.text("1. Gambar Asli", margin, yPos);
-      yPos += 5;
-      renderImage(originalImgBase64);
+    // 1. GAMBAR ASLI — selalu ditampilkan
+    const originalBase64 = await getImageData(originalSrc);
+    if (originalBase64) {
+      addText("1. Gambar Asli", { isBold: true, fontSize: 10, spacing: 2 });
+      yPos = renderImageToPDF(doc, originalBase64, margin, pageWidth, pageHeight, yPos);
     }
 
-    // 2. AI Segmentation (HANYA MUNCUL JIKA includeAI = TRUE)
-    if (includeAI && (item.segmentation_image || item.gambar_hasil_url)) {
-      const aiImg = item.segmentation_image
-        ? `data:image/jpeg;base64,${item.segmentation_image}`
-        : item.gambar_hasil_url;
-      const aiImgBase64 = await getImageData(aiImg);
-      doc.setFont("helvetica", "bold");
-      doc.text("2. Segmentasi AI", margin, yPos);
-      yPos += 5;
-      renderImage(aiImgBase64);
-    }
-
-    // 3. Dokter Mark
-    let doctorBoxes =
-      typeof item.doctorBoxes === "string"
-        ? JSON.parse(item.doctorBoxes || "[]")
-        : item.doctorBoxes;
-    if (doctorBoxes && doctorBoxes.length > 0 && originalImgBase64) {
-      const docImgBase64 = await generateDoctorImage(
-        originalImgBase64,
-        doctorBoxes,
-      );
-      doc.setFont("helvetica", "bold");
-      doc.text(
-        includeAI ? "3. Segmentasi Dokter" : "2. Segmentasi Dokter",
-        margin,
-        yPos,
-      );
-      yPos += 5;
-      renderImage(docImgBase64);
-    }
-
-    // --- 4. CATATAN & DIAGNOSIS RESMI DOKTER (DIUTAMAKAN) ---
-    doc.setFont("helvetica", "bold"); doc.setFontSize(14);
-    doc.text("Catatan & Diagnosis Resmi Dokter", margin, yPos); yPos += 8;
-
-    const section = (title) => { doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text(title, margin, yPos); yPos += 6; };
-
-    addWrappedText(`Temuan Dokter:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctor_notes?.temuan || "-");
-    addWrappedText(`Diagnosis Penyakit:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctor_notes?.penyakit || "-");
-    addWrappedText(`Evaluasi Risiko:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctor_notes?.risiko || "-");
-    addWrappedText(`Rekomendasi / Tindakan:`, { isBold: true, fontSize: 10 }); addWrappedText(item.doctor_notes?.rekomendasi || "-");
-    
-    doc.setDrawColor(200); doc.line(margin, yPos, pageWidth - margin, yPos); yPos += 8;
-
-    // --- 5. ANALISIS KLINIS AI (SEBAGAI PENUNJANG) ---
+    // 2. GAMBAR AI — hanya jika includeAI = true
     if (includeAI) {
-      doc.setFont("helvetica", "bold"); doc.setFontSize(14);
-      doc.text("Analisis Klinis (Sistem AI)", margin, yPos); yPos += 8;
-      
-      section("1. Temuan AI");
-      addWrappedText(item.result?.findings || item.ai_result?.findings || "-");
+      // Coba gambar hasil AI dari URL server dulu, fallback ke base64
+      const aiSrc = item.gambar_hasil_url || 
+        (item.segmentation_image
+          ? (item.segmentation_image.startsWith("data:") || item.segmentation_image.startsWith("http")
+              ? item.segmentation_image
+              : `data:image/jpeg;base64,${item.segmentation_image}`)
+          : null);
 
-      section("2. Potensi Kelainan AI");
-      addWrappedText(item.result?.abnormality || item.ai_result?.abnormality || "-");
-
-      section("3. Tingkat Risiko AI");
-      addWrappedText(`Overall Risk: ${item.result?.risk || item.ai_result?.risk || 0}%`);
-
-      section("4. Rekomendasi AI");
-      const rec = item.result?.recommendation || item.ai_result?.recommendation;
-      addWrappedText(`Pendekatan: ${rec?.approach || "-"}`);
-      addWrappedText(`Penanganan: ${rec?.treatment || "-"}`);
-      yPos += 4;
+      const aiBase64 = await getImageData(aiSrc);
+      if (aiBase64) {
+        addText("2. Segmentasi AI (Area Abnormal)", { isBold: true, fontSize: 10, spacing: 2 });
+        yPos = renderImageToPDF(doc, aiBase64, margin, pageWidth, pageHeight, yPos);
+      }
     }
 
-    // --- 6. DISCLAIMER ---
-    doc.setDrawColor(200); doc.line(margin, yPos, pageWidth - margin, yPos); yPos += 6;
-    addWrappedText("Dokumen ini sah dan merupakan bagian dari rekam medis pasien. Hasil AI hanya sebagai penunjang dan tidak menggantikan diagnosis medis profesional.", { fontSize: 8, color: [100, 100, 100] });
+    // 3. GAMBAR DOKTER — selalu ditampilkan kalau ada
+    // Prioritas: gambar_dokter_url (sudah di-render di server) → generate dari bbox
+    let doctorBase64 = null;
+
+    if (item.gambar_dokter_url) {
+      // ✅ Pakai gambar dokter yang sudah tersimpan di server
+      doctorBase64 = await getImageData(item.gambar_dokter_url);
+    }
+
+    if (!doctorBase64) {
+      // Fallback: generate dari kotak bbox dokter + gambar original
+      const rawBoxes = typeof item.doctorBoxes === "string"
+        ? JSON.parse(item.doctorBoxes || "[]")
+        : (item.doctorBoxes || item.doctor_bboxes || []);
+
+      if (rawBoxes && rawBoxes.length > 0 && originalBase64) {
+        doctorBase64 = await generateDoctorImageFromBoxes(originalBase64, rawBoxes);
+      }
+    }
+
+    if (doctorBase64) {
+      const docLabel = includeAI ? "3. Segmentasi Dokter (Area Anotasi)" : "2. Segmentasi Dokter (Area Anotasi)";
+      addText(docLabel, { isBold: true, fontSize: 10, spacing: 2 });
+      yPos = renderImageToPDF(doc, doctorBase64, margin, pageWidth, pageHeight, yPos);
+    }
+
+    addDivider();
+
+    // ── SECTION CATATAN DOKTER ───────────────────────────────
+    addSectionTitle("B. Catatan & Diagnosis Resmi Dokter");
+
+    const notes = item.doctorNotes || item.doctor_notes || {};
+    addText("Temuan Klinis:", { isBold: true, fontSize: 10, spacing: 1 });
+    addText(notes.temuan || "-", { fontSize: 10, spacing: 5 });
+
+    addText("Diagnosis Penyakit:", { isBold: true, fontSize: 10, spacing: 1 });
+    addText(notes.penyakit || "-", { fontSize: 10, spacing: 5 });
+
+    addText("Evaluasi Risiko:", { isBold: true, fontSize: 10, spacing: 1 });
+    addText(notes.risiko || "-", { fontSize: 10, spacing: 5 });
+
+    addText("Rekomendasi / Tindakan:", { isBold: true, fontSize: 10, spacing: 1 });
+    addText(notes.rekomendasi || "-", { fontSize: 10, spacing: 5 });
+
+    addDivider();
+
+    // ── SECTION ANALISIS AI (hanya jika includeAI) ───────────
+    if (includeAI) {
+      addSectionTitle("C. Analisis Klinis Sistem AI (Penunjang)");
+
+      const aiResult = item.result || item.ai_result || {};
+      const rec = aiResult.recommendation || {};
+
+      addText("Temuan AI:", { isBold: true, fontSize: 10, spacing: 1 });
+      addText(aiResult.findings || "-", { fontSize: 10, spacing: 5 });
+
+      addText("Potensi Kelainan:", { isBold: true, fontSize: 10, spacing: 1 });
+      addText(aiResult.abnormality || "-", { fontSize: 10, spacing: 5 });
+
+      addText(`Tingkat Risiko AI: ${aiResult.risk ?? "-"}%`, { isBold: true, fontSize: 10, spacing: 5 });
+
+      addText("Rekomendasi AI:", { isBold: true, fontSize: 10, spacing: 1 });
+      addText(`Pendekatan: ${rec.approach || "-"}`, { fontSize: 10, spacing: 2 });
+      addText(`Penanganan: ${rec.treatment || "-"}`, { fontSize: 10, spacing: 5 });
+
+      addDivider();
+    }
+
+    // ── DISCLAIMER ───────────────────────────────────────────
+    addText(
+      includeAI
+        ? "Dokumen ini merupakan bagian dari rekam medis pasien. Hasil analisis AI bersifat penunjang dan tidak menggantikan diagnosis medis profesional."
+        : "Dokumen ini merupakan laporan resmi dari dokter pemeriksa dan merupakan bagian dari rekam medis pasien.",
+      { fontSize: 8, color: [120, 120, 120], spacing: 0 }
+    );
   }
 
-  const fileName = patientData ? `Laporan_${patientData.nama_pasien}.pdf` : `Laporan_Medis_${new Date().getTime()}.pdf`;
+  const fileName = patientData
+    ? `Laporan_${(patientData.nama_pasien || "Pasien").replace(/\s+/g, "_")}_${Date.now()}.pdf`
+    : `Laporan_Medis_${Date.now()}.pdf`;
+
   doc.save(fileName);
 };

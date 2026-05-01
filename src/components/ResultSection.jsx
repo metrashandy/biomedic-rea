@@ -8,7 +8,7 @@ import {
   Maximize2,
   X,
 } from "lucide-react";
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 
 import ResultCard from "./ResultCard";
 import RiskCard from "./RiskCard";
@@ -55,45 +55,83 @@ export default function ResultSection({
     const type = (analysisType || "X-Ray").toLowerCase();
     let mod = "citra medis";
     let kelainan = "kelainan atau anomali";
-    if (
-      type.includes("x-ray") ||
-      type.includes("xray") ||
-      type.includes("c-arm")
-    ) {
-      mod = "citra X-Ray";
-      kelainan = "opacity, asimetri, atau perbedaan densitas";
-    } else if (
-      type.includes("usg") ||
-      type.includes("echo") ||
-      type.includes("ultrasound")
-    ) {
-      mod = "citra Ultrasound (USG)";
-      kelainan = "nodul, massa, atau iregularitas echogenicity";
-    } else if (
-      type.includes("endoscopy") ||
-      type.includes("colonoscopy") ||
-      type.includes("broncoscopy")
-    ) {
-      mod = "citra Endoskopi";
-      kelainan = "lesi mukosa, polip, inflamasi, atau pendarahan";
-    } else if (
-      type.includes("ekg") ||
-      type.includes("eeg") ||
-      type.includes("nst")
-    ) {
-      mod = "rekaman sinyal medis";
-      kelainan = "pola gelombang abnormal atau deviasi ritme";
-    } else if (
-      type.includes("mata") ||
-      type.includes("oct") ||
-      type.includes("fundus")
-    ) {
-      mod = "citra Oftalmologi";
-      kelainan = "eksudat, perdarahan mikro, atau abnormalitas makula";
+    if (type.includes("x-ray") || type.includes("xray") || type.includes("c-arm")) {
+      mod = "citra X-Ray"; kelainan = "opacity, asimetri, atau perbedaan densitas";
+    } else if (type.includes("usg") || type.includes("echo") || type.includes("ultrasound")) {
+      mod = "citra Ultrasound (USG)"; kelainan = "nodul, massa, atau iregularitas echogenicity";
+    } else if (type.includes("endoscopy") || type.includes("colonoscopy") || type.includes("broncoscopy")) {
+      mod = "citra Endoskopi"; kelainan = "lesi mukosa, polip, inflamasi, atau pendarahan";
+    } else if (type.includes("ekg") || type.includes("eeg") || type.includes("nst")) {
+      mod = "rekaman sinyal medis"; kelainan = "pola gelombang abnormal atau deviasi ritme";
+    } else if (type.includes("mata") || type.includes("oct") || type.includes("fundus")) {
+      mod = "citra Oftalmologi"; kelainan = "eksudat, perdarahan mikro, atau abnormalitas makula";
     } else {
       mod = `citra ${analysisType}`;
     }
     return `Sistem AI telah memindai ${mod} ini dan menandai area yang dicurigai memiliki kelainan (${kelainan}).`;
+  };
+
+  // =====================================================
+  // 🔥 FUNGSI EXPORT CANVAS: Gambar + Kotak Hijau Dokter
+  // Dipanggil dari luar via prop getDoctorImageBlob
+  // =====================================================
+  const exportDoctorImageAsBlob = useCallback(() => {
+    return new Promise((resolve) => {
+      const img = imageRef.current;
+      if (!img || doctorBoxes.length === 0) {
+        resolve(null); // Tidak ada kotak dokter → tidak perlu simpan gambar
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || img.clientWidth;
+      canvas.height = img.naturalHeight || img.clientHeight;
+      const ctx = canvas.getContext("2d");
+
+      // Gambar base image (gambar AI atau original)
+      const baseImg = new Image();
+      baseImg.crossOrigin = "anonymous";
+      baseImg.onload = () => {
+        ctx.drawImage(baseImg, 0, 0, canvas.width, canvas.height);
+
+        // Gambar kotak hijau dokter di atas gambar
+        ctx.strokeStyle = "#22c55e"; // green-500
+        ctx.lineWidth = Math.max(2, canvas.width * 0.003);
+        ctx.fillStyle = "rgba(34, 197, 94, 0.15)";
+
+        doctorBoxes.forEach((box) => {
+          const x = box.x * canvas.width;
+          const y = box.y * canvas.height;
+          const w = box.width * canvas.width;
+          const h = box.height * canvas.height;
+          ctx.fillRect(x, y, w, h);
+          ctx.strokeRect(x, y, w, h);
+        });
+
+        canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.92);
+      };
+      baseImg.onerror = () => resolve(null);
+
+      // Pakai gambar yang sedang ditampilkan (AI segmentation atau original)
+      const currentSrc =
+        showSegmentation && result?.segmentation_image
+          ? result.segmentation_image.startsWith("http")
+            ? result.segmentation_image
+            : `data:image/jpeg;base64,${result.segmentation_image}`
+          : imagePreview;
+
+      baseImg.src = currentSrc;
+    });
+  }, [doctorBoxes, result, imagePreview, showSegmentation]);
+
+  // Expose fungsi ke parent via ref callback pattern
+  // Parent yang perlu gambar dokter tinggal panggil: handleSaveDoctorLocal(blob)
+  // Tapi kita simplify: saat klik "Simpan", kita generate blob dulu lalu forward ke parent
+  const handleSaveClick = async () => {
+    const blob = await exportDoctorImageAsBlob();
+    if (typeof handleSaveDoctorLocal === "function") {
+      handleSaveDoctorLocal(blob); // Kirim blob ke parent
+    }
   };
 
   const handleMouseDown = (e) => {
@@ -124,15 +162,12 @@ export default function ResultSection({
     if (e.button !== 0 || !drawing || !currentBox) return;
     const img = imageRef.current;
     if (!img) return;
-
-    // FIX: Simpan sebagai persentase (0.0 - 1.0) dari ukuran layar gambar saat itu
     const normalizedBox = {
       x: currentBox.x / img.clientWidth,
       y: currentBox.y / img.clientHeight,
       width: currentBox.width / img.clientWidth,
       height: currentBox.height / img.clientHeight,
     };
-
     setDoctorBoxes((prev) => [...prev, normalizedBox]);
     setDrawing(false);
     setStartPoint(null);
@@ -145,7 +180,6 @@ export default function ResultSection({
     >
       <div
         className={`relative inline-block ${isFull ? "cursor-default" : "cursor-crosshair"}`}
-        // Fungsi ngegambar tetap DIMATIKAN saat isFull (Zoom)
         onMouseDown={isFull ? undefined : handleMouseDown}
         onMouseUp={isFull ? undefined : handleMouseUp}
         onMouseMove={isFull ? undefined : handleMouseMove}
@@ -178,7 +212,6 @@ export default function ResultSection({
           className={`block select-none ${isFull ? "max-h-[85vh] w-auto" : "w-full h-auto max-h-[500px] object-contain"}`}
         />
 
-        {/* 🔥 FIX: Kotak Hijau Dokter SEKARANG TETAP MUNCUL walaupun di-zoom (isFull dilepas dari sini) */}
         {showDoctorBoxes &&
           doctorBoxes.map((box, index) => (
             <div
@@ -193,7 +226,6 @@ export default function ResultSection({
             />
           ))}
 
-        {/* Preview garis biru putus-putus (hanya muncul pas lagi ngegambar, disembunyikan pas zoom) */}
         {!isFull && currentBox && (
           <div
             className="absolute border-2 border-blue-400 border-dashed pointer-events-none bg-blue-400/20"
@@ -208,10 +240,11 @@ export default function ResultSection({
       </div>
     </div>
   );
+
   const risk = Number(result?.result?.risk) || 0;
+
   return (
     <div className="animate-fade-in">
-      {/* === MODAL FULLSCREEN GAMBAR === */}
       {isFullScreen && (
         <div className="fixed inset-0 z-[200] bg-black/90 flex flex-col items-center justify-center p-6 backdrop-blur-sm">
           <ImageRenderer isFull={true} />
@@ -220,6 +253,7 @@ export default function ResultSection({
           </p>
         </div>
       )}
+
       <div className="text-center mb-10">
         <h2 className="text-3xl font-bold text-slate-800">Hasil Analisis</h2>
         <p className="text-slate-500 mt-1">
@@ -236,7 +270,6 @@ export default function ResultSection({
           <div>
             <ImageRenderer isFull={false} />
 
-            {/* KONTROL & LEGENDA DITENGAH KOTAK PUTIH */}
             <div className="mt-6 flex flex-col items-center justify-center bg-slate-50 p-5 rounded-2xl border border-slate-200">
               <div className="flex flex-wrap gap-8 justify-center">
                 <label className="flex items-center gap-3 cursor-pointer">
@@ -246,9 +279,7 @@ export default function ResultSection({
                     className="w-5 h-5 accent-red-600 cursor-pointer"
                   />
                   <div className="w-5 h-5 border-2 border-red-600 rounded-sm bg-red-600/20"></div>
-                  <span className="font-bold text-slate-800 text-base">
-                    Area AI (Abnormal)
-                  </span>
+                  <span className="font-bold text-slate-800 text-base">Area AI (Abnormal)</span>
                 </label>
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
@@ -257,9 +288,7 @@ export default function ResultSection({
                     className="w-5 h-5 accent-green-600 cursor-pointer"
                   />
                   <div className="w-5 h-5 border-2 border-green-500 rounded-sm bg-green-500/20"></div>
-                  <span className="font-bold text-slate-800 text-base">
-                    Area Dokter
-                  </span>
+                  <span className="font-bold text-slate-800 text-base">Area Dokter</span>
                 </label>
               </div>
               {doctorBoxes.length > 0 && (
@@ -291,12 +320,8 @@ export default function ResultSection({
                 <span className="text-slate-500 text-sm flex items-center gap-1">
                   <AlertTriangle size={14} /> Status Visual
                 </span>
-                <p
-                  className={`font-bold text-lg mt-1 ${result?.result?.bboxes?.length > 0 ? "text-red-600" : "text-green-600"}`}
-                >
-                  {result?.result?.bboxes?.length > 0
-                    ? "Suspect Abnormal"
-                    : "Tampak Bersih"}
+                <p className={`font-bold text-lg mt-1 ${result?.result?.bboxes?.length > 0 ? "text-red-600" : "text-green-600"}`}>
+                  {result?.result?.bboxes?.length > 0 ? "Suspect Abnormal" : "Tampak Bersih"}
                 </p>
               </div>
               <div className="bg-sky-50 p-4 rounded-xl border border-sky-100">
@@ -304,11 +329,7 @@ export default function ResultSection({
                   <Activity size={14} /> Pola Distribusi
                 </span>
                 <p className="font-bold text-lg text-slate-800 mt-1">
-                  {result?.result?.bboxes?.length > 1
-                    ? "Multifokal (Menyebar)"
-                    : result?.result?.bboxes?.length === 1
-                      ? "Fokal (Terpusat)"
-                      : "Tidak Ada"}
+                  {result?.result?.bboxes?.length > 1 ? "Multifokal (Menyebar)" : result?.result?.bboxes?.length === 1 ? "Fokal (Terpusat)" : "Tidak Ada"}
                 </p>
               </div>
               <div className="bg-sky-50 p-4 rounded-xl border border-sky-100">
@@ -323,26 +344,12 @@ export default function ResultSection({
 
             <div className="flex gap-6 mt-4 text-sm bg-slate-50 p-3 rounded-lg border border-slate-200 justify-center">
               <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showSegmentation}
-                  onChange={() => setShowSegmentation(!showSegmentation)}
-                  className="w-4 h-4 accent-blue-600"
-                />
-                <span className="font-medium text-slate-700">
-                  Tampilkan Box AI
-                </span>
+                <input type="checkbox" checked={showSegmentation} onChange={() => setShowSegmentation(!showSegmentation)} className="w-4 h-4 accent-blue-600" />
+                <span className="font-medium text-slate-700">Tampilkan Box AI</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showDoctorBoxes}
-                  onChange={() => setShowDoctorBoxes(!showDoctorBoxes)}
-                  className="w-4 h-4 accent-green-600"
-                />
-                <span className="font-medium text-slate-700">
-                  Tampilkan Box Dokter
-                </span>
+                <input type="checkbox" checked={showDoctorBoxes} onChange={() => setShowDoctorBoxes(!showDoctorBoxes)} className="w-4 h-4 accent-green-600" />
+                <span className="font-medium text-slate-700">Tampilkan Box Dokter</span>
               </label>
             </div>
           </div>
@@ -352,67 +359,49 @@ export default function ResultSection({
       {/* HASIL KLINIS & CATATAN DOKTER */}
       <div className="space-y-6">
         <div className="bg-white p-6 rounded-xl border border-slate-200">
-          <ResultCard
-            title="Temuan Klinis (AI)"
-            content={result?.result?.findings || "-"}
-          />
+          <ResultCard title="Temuan Klinis (AI)" content={result?.result?.findings || "-"} />
           <div className="mt-5 border-t border-slate-100 pt-4">
             <label className="block text-xl font-bold text-[#1e1b4b] mb-4 flex items-center gap-2">
-              <User size={20} className="text-blue-600" /> Temuan Klinis
-              (Dokter):
+              <User size={20} className="text-blue-600" /> Temuan Klinis (Dokter):
             </label>
             <textarea
               placeholder="Tambahkan catatan atau koreksi dokter terkait temuan di sini..."
               className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-slate-700"
               rows={3}
               value={doctorNotes?.temuan || ""}
-              onChange={(e) =>
-                setDoctorNotes({ ...doctorNotes, temuan: e.target.value })
-              }
+              onChange={(e) => setDoctorNotes({ ...doctorNotes, temuan: e.target.value })}
             />
           </div>
         </div>
 
         <div className="bg-white p-6 rounded-xl border border-slate-200">
-          <ResultCard
-            title="Kemungkinan Penyakit (AI)"
-            content={result?.result?.abnormality || "-"}
-          />
+          <ResultCard title="Kemungkinan Penyakit (AI)" content={result?.result?.abnormality || "-"} />
           <div className="mt-5 border-t border-slate-100 pt-4">
             <label className="block text-xl font-bold text-[#1e1b4b] mb-4 flex items-center gap-2">
-              <User size={20} className="text-blue-600" /> Kemungkinan Penyakit
-              (Dokter):
+              <User size={20} className="text-blue-600" /> Kemungkinan Penyakit (Dokter):
             </label>
             <textarea
               placeholder="Tambahkan diagnosis banding dari dokter di sini..."
               className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-slate-700"
               rows={3}
               value={doctorNotes?.penyakit || ""}
-              onChange={(e) =>
-                setDoctorNotes({ ...doctorNotes, penyakit: e.target.value })
-              }
+              onChange={(e) => setDoctorNotes({ ...doctorNotes, penyakit: e.target.value })}
             />
           </div>
         </div>
 
         <div className="bg-white p-6 rounded-xl border border-slate-200">
-          <RiskCard
-            percentage={result?.result?.risk || 0}
-            factors={result?.result?.risk_factors}
-          />
+          <RiskCard percentage={result?.result?.risk || 0} factors={result?.result?.risk_factors} />
           <div className="mt-5 border-t border-slate-100 pt-4">
             <label className="block text-xl font-bold text-[#1e1b4b] mb-4 flex items-center gap-2">
-              <User size={20} className="text-blue-600" /> Penilaian Risiko
-              (Dokter):
+              <User size={20} className="text-blue-600" /> Penilaian Risiko (Dokter):
             </label>
             <textarea
               placeholder="Tambahkan evaluasi risiko klinis menurut dokter..."
               className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-slate-700"
               rows={3}
               value={doctorNotes?.risiko || ""}
-              onChange={(e) =>
-                setDoctorNotes({ ...doctorNotes, risiko: e.target.value })
-              }
+              onChange={(e) => setDoctorNotes({ ...doctorNotes, risiko: e.target.value })}
             />
           </div>
         </div>
@@ -424,17 +413,14 @@ export default function ResultSection({
           />
           <div className="mt-5 border-t border-slate-100 pt-4">
             <label className="block text-xl font-bold text-[#1e1b4b] mb-4 flex items-center gap-2">
-              <User size={20} className="text-blue-600" /> Rekomendasi
-              Pengobatan (Dokter):
+              <User size={20} className="text-blue-600" /> Rekomendasi Pengobatan (Dokter):
             </label>
             <textarea
               placeholder="Tuliskan resep, tindakan lanjutan, atau rujukan dari dokter..."
               className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-slate-700"
               rows={3}
               value={doctorNotes?.rekomendasi || ""}
-              onChange={(e) =>
-                setDoctorNotes({ ...doctorNotes, rekomendasi: e.target.value })
-              }
+              onChange={(e) => setDoctorNotes({ ...doctorNotes, rekomendasi: e.target.value })}
             />
           </div>
         </div>
@@ -444,7 +430,7 @@ export default function ResultSection({
         <DisclaimerCard content="Hasil ini dihasilkan oleh AI dan tidak menggantikan diagnosis medis profesional. Catatan yang ditambahkan oleh dokter akan menjadi rekam medis resmi." />
       </div>
 
-      {/* ACTION BUTTON */}
+      {/* ACTION BUTTONS */}
       <div className="mt-10 flex flex-wrap justify-center items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
         <button
           onClick={onReset}
@@ -453,12 +439,7 @@ export default function ResultSection({
           <RotateCcw size={18} /> Analisis Ulang
         </button>
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            if (typeof handleSaveDoctorLocal === "function") {
-              handleSaveDoctorLocal();
-            }
-          }}
+           onClick={handleSaveClick}
           className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-xl shadow-sm transition-colors"
         >
           Simpan Catatan Dokter
@@ -468,8 +449,7 @@ export default function ResultSection({
           disabled={exporting}
           className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl shadow-sm transition-colors disabled:opacity-50"
         >
-          <Download size={18} />{" "}
-          {exporting ? "Menyiapkan PDF..." : "Download Laporan PDF"}
+          <Download size={18} /> {exporting ? "Menyiapkan PDF..." : "Download Laporan PDF"}
         </button>
       </div>
     </div>

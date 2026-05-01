@@ -9,13 +9,10 @@ class Pasien(Base):
     id_pasien = Column(Integer, primary_key=True, index=True)
     no_rm = Column(String, unique=True, index=True)
     nama_pasien = Column(String)
-    
-    # --- TAMBAHAN BARU ---
     umur = Column(Integer, nullable=True)
     gender = Column(String, nullable=True)
     blood_type = Column(String, nullable=True)
 
-    # Relasi ke tabel pemeriksaan
     pemeriksaan = relationship("Pemeriksaan", back_populates="pasien")
 
 
@@ -25,7 +22,6 @@ class Jenis(Base):
     id_jenis = Column(Integer, primary_key=True, index=True)
     nama_jenis = Column(String)
 
-    # Relasi ke tabel analisis
     analisis = relationship("Analisis", back_populates="jenis")
 
 
@@ -37,7 +33,7 @@ class Pemeriksaan(Base):
     no_reg = Column(String, index=True)
     tgl_pemeriksaan = Column(DateTime, default=datetime.utcnow)
     id_dokter = Column(Integer)
-    hasil_akhir_pdf = Column(String, nullable=True) # Path ke file PDF
+    hasil_akhir_pdf = Column(String, nullable=True)
 
     pasien = relationship("Pasien", back_populates="pemeriksaan")
     analisis = relationship("Analisis", back_populates="pemeriksaan")
@@ -50,16 +46,16 @@ class Analisis(Base):
     id_pemeriksaan = Column(Integer, ForeignKey("pemeriksaan.id_pemeriksaan"))
     id_jenis = Column(Integer, ForeignKey("jenis.id_jenis"))
     
-    gambar_asli = Column(String) # Path file gambar
-    gambar_hasil = Column(String, nullable=True) # Path file segmentasi
-    teks_hasil_analisis = Column(Text, nullable=True) # JSON AI Result
-    doctor_notes = Column(Text, nullable=True)  # Simpan JSON Catatan Dokter
-    doctor_bboxes = Column(Text, nullable=True) # Simpan JSON Kotak Hijau Dokter
-    hasil_pdf = Column(String, nullable=True)
-    ai_bboxes = Column(Text, nullable=True)
-    doctor_bboxes = Column(Text, nullable=True)
+    gambar_asli = Column(String, nullable=True)         # Path gambar original
+    gambar_hasil = Column(String, nullable=True)        # Path gambar hasil segmentasi AI
+    gambar_dokter = Column(String, nullable=True)       # ✅ Path gambar anotasi dokter (BARU)
 
-    doctor_notes = Column(Text, nullable=True)
+    teks_hasil_analisis = Column(Text, nullable=True)   # JSON AI Result
+    ai_bboxes = Column(Text, nullable=True)             # JSON bbox dari AI
+    doctor_bboxes = Column(Text, nullable=True)         # JSON bbox dari dokter
+    doctor_notes = Column(Text, nullable=True)          # JSON catatan dokter
+    
+    hasil_pdf = Column(String, nullable=True)
     status = Column(String, default="Selesai")
     created_at = Column(DateTime, default=datetime.utcnow)
 

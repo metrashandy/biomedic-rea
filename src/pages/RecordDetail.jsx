@@ -127,18 +127,20 @@ export default function RecordDetail() {
   };
 
   // 🔥 TAMBAHAN: FUNGSI UNTUK MENYIMPAN CATATAN DOKTER DI HALAMAN RECORD
-  const handleSaveDoctor = async () => {
+  const handleSaveDoctor = async (doctorImageBlob = null) => {
     const formData = new FormData();
     formData.append("doctor_notes", JSON.stringify(doctorNotes));
     formData.append("doctor_bboxes", JSON.stringify(doctorBoxes));
-
+ 
+    // Attach gambar dokter kalau ada kotak yang digambar
+    if (doctorImageBlob) {
+      formData.append("doctor_image", doctorImageBlob, "doctor_segmentation.jpg");
+    }
+ 
     try {
       await fetch(
         `http://127.0.0.1:8000/api/records/${recordId}/doctor-update`,
-        {
-          method: "PUT",
-          body: formData,
-        },
+        { method: "PUT", body: formData }
       );
       toast.success("Catatan Dokter Berhasil Disimpan!");
     } catch (e) {

@@ -1,4 +1,13 @@
 export default function ResultCard({ icon, title, content }) {
+  let safeContent = content || "-";
+  if (typeof content === "object" && content !== null) {
+    // Kalau AI ngirim {1: "Pneumonia", 2: "TBC"}, gabungin jadi satu paragraf
+    safeContent = Object.entries(content)
+      .map(([key, value]) => `${key}. ${value}`)
+      .join("\n\n");
+  } else if (Array.isArray(content)) {
+    safeContent = content.join("\n\n");
+  }
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border h-full">
       <div className="flex items-center gap-3 mb-3">

@@ -152,23 +152,28 @@ export default function PatientDetail() {
     }
   };
 
-  const handleSaveDoctorNew = async () => {
+  const handleSaveDoctorNew = async (doctorImageBlob = null) => {
     const rId = uploadResult?.id_analisis || uploadResult?.record_id;
     if (!rId) return;
+ 
     const formData = new FormData();
     formData.append("doctor_notes", JSON.stringify(doctorNotes));
     formData.append("doctor_bboxes", JSON.stringify(doctorBoxes));
+ 
+    // Attach gambar dokter kalau ada kotak yang digambar
+    if (doctorImageBlob) {
+      formData.append("doctor_image", doctorImageBlob, "doctor_segmentation.jpg");
+    }
+ 
     try {
       await fetch(`http://127.0.0.1:8000/api/records/${rId}/doctor-update`, {
         method: "PUT",
         body: formData,
       });
       toast.success("Catatan Dokter Tersimpan!");
-
-      // FIX: Menutup halaman analisis dan kembali ke riwayat medis
       setUploadResult(null);
       setShowUploadMode(false);
-      fetchPatientData(); // Refresh list otomatis
+      fetchPatientData();
     } catch (e) {
       toast.error("Gagal simpan");
     }
@@ -563,11 +568,10 @@ export default function PatientDetail() {
                             )}
                           </h3>
                           <p className="text-slate-600 text-sm leading-relaxed line-clamp-2 bg-sky-50/50 p-4 rounded-2xl border border-sky-100 italic">
-                            "
-                            {record.ai_result?.findings ||
-                              "Data citra medis sedang dalam antrean pemrosesan AI. Klik tombol detail untuk melihat/memulai."}
-                            "
-                          </p>
+   "{typeof record.ai_result?.findings === 'object' 
+      ? Object.values(record.ai_result.findings).join(" ") 
+      : (record.ai_result?.findings || "Data citra medis sedang dalam antrean pemrosesan AI. Klik tombol detail untuk melihat/memulai.")}"
+</p>
                         </div>
 
                         <div className="mt-6 flex flex-wrap gap-3">
