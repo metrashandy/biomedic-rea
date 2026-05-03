@@ -7,7 +7,7 @@ import numpy as np
 import cv2
 import base64
 from dotenv import load_dotenv
-from typing import Optional
+from typing import Optional, List
 from deep_translator import GoogleTranslator
 from openai import OpenAI
 from PIL import Image
@@ -27,13 +27,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 
-# Perintah ini yang akan mengeksekusi pembuatan file medis.db & tabelnya
 models.Base.metadata.create_all(bind=engine)
+
 def seed_everything():
     db = SessionLocal()
-    # Seed 10 Pasien Lengkap
     if db.query(models.Pasien).count() == 0:
-        data_pasien =[
+        data_pasien = [
             {"nama": "Budi Santoso", "umur": 45, "gender": "Laki-laki", "goldar": "O+"},
             {"nama": "Siti Aminah", "umur": 32, "gender": "Perempuan", "goldar": "A+"},
             {"nama": "Ahmad Wijaya", "umur": 58, "gender": "Laki-laki", "goldar": "B+"},
@@ -48,13 +47,13 @@ def seed_everything():
         for i, p in enumerate(data_pasien):
             db.add(models.Pasien(no_rm=f"RM-00{i+1}", nama_pasien=p["nama"], umur=p["umur"], gender=p["gender"], blood_type=p["goldar"]))
         print("✅ SEED: 10 Pasien Lengkap Berhasil Dibuat.")
-    
+
     if db.query(models.Jenis).count() == 0:
-        kategori =["X-Ray", "CT Scan", "Retina Scan", "Endoscopy"]
+        kategori = ["X-Ray", "CT Scan", "Retina Scan", "Endoscopy"]
         for k in kategori:
             db.add(models.Jenis(nama_jenis=k))
         print("✅ SEED: 4 Kategori pemeriksaan berhasil dibuat.")
-    
+
     db.commit()
     db.close()
 
@@ -85,35 +84,27 @@ from prompts import (
     get_prompt_xrays,
     get_prompt_fundus,
     get_prompt_ct,
-    get_prompt_endoscopy
+    get_prompt_endoscopy,
+    get_prompt_combine_results,   # ← prompt gabungan baru
 )
 
 # ================== FOLDER STRUCTURE HELPERS ==================
 
 def sanitize_folder_name(name: str) -> str:
-    """Bersihkan nama untuk dipakai sebagai nama folder (hapus karakter spesial)."""
     name = name.strip()
-    # Ganti spasi dengan underscore, hapus karakter selain huruf/angka/underscore/dash
     name = re.sub(r'\s+', '_', name)
     name = re.sub(r'[^\w\-]', '', name)
     return name
 
 def sanitize_jenis_name(jenis: str) -> str:
-    """Ubah nama jenis pemeriksaan jadi nama folder yang bersih."""
     jenis = jenis.strip().lower()
     jenis = re.sub(r'\s+', '_', jenis)
     jenis = re.sub(r'[^\w\-]', '', jenis)
-    return jenis  # contoh: "X-Ray" → "x-ray", "CT Scan" → "ct_scan"
+    return jenis
 
 def get_next_sequence(folder_path: str, prefix: str) -> int:
-    """
-    Hitung nomor urut berikutnya berdasarkan file _original yang sudah ada.
-    Setiap sesi upload = 1 file original. Jadi kita cukup hitung file _original.
-    Contoh: sudah ada _001_original → return 2
-    """
     if not os.path.exists(folder_path):
         return 1
-    # Hitung hanya file original (1 per sesi upload)
     original_files = [
         f for f in os.listdir(folder_path)
         if f.startswith(prefix) and "_original." in f
@@ -121,10 +112,6 @@ def get_next_sequence(folder_path: str, prefix: str) -> int:
     return len(original_files) + 1
 
 def build_patient_jenis_dir(no_rm: str, nama_pasien: str, jenis: str) -> str:
-    """
-    Buat dan kembalikan path folder:
-    uploads/patients/RM-001_BudiSantoso/xray/
-    """
     patient_folder = f"{sanitize_folder_name(no_rm)}_{sanitize_folder_name(nama_pasien)}"
     jenis_folder = sanitize_jenis_name(jenis)
     dir_path = os.path.join(UPLOAD_DIR, "patients", patient_folder, jenis_folder)
@@ -132,22 +119,20 @@ def build_patient_jenis_dir(no_rm: str, nama_pasien: str, jenis: str) -> str:
     return dir_path
 
 def build_filename(no_rm: str, nama_pasien: str, jenis: str, seq: int, suffix: str, ext: str) -> str:
-    """
-    Buat nama file dengan format:
-    RM-001_BudiSantoso_xray_001_original.jpg
-    RM-001_BudiSantoso_xray_001_ai.jpg
-    RM-001_BudiSantoso_xray_001_doctor.jpg
-
-    suffix: "original" | "ai" | "doctor"
-    """
     rm_clean = sanitize_folder_name(no_rm)
     nama_clean = sanitize_folder_name(nama_pasien)
     jenis_clean = sanitize_jenis_name(jenis)
     seq_str = str(seq).zfill(3)
     return f"{rm_clean}_{nama_clean}_{jenis_clean}_{seq_str}_{suffix}.{ext}"
 
+def build_filename_multi(no_rm: str, nama_pasien: str, jenis: str, seq: int, urutan: int, suffix: str, ext: str) -> str:
+    rm_clean = sanitize_folder_name(no_rm)
+    nama_clean = sanitize_folder_name(nama_pasien)
+    jenis_clean = sanitize_jenis_name(jenis)
+    seq_str = str(seq).zfill(3)
+    return f"{rm_clean}_{nama_clean}_{jenis_clean}_{seq_str}_img{urutan}_{suffix}.{ext}"
+
 def get_patient_info_from_db(db, id_pasien: int):
-    """Ambil no_rm dan nama pasien dari database."""
     pasien = db.query(models.Pasien).filter(models.Pasien.id_pasien == id_pasien).first()
     if not pasien:
         raise HTTPException(status_code=404, detail=f"Pasien dengan ID {id_pasien} tidak ditemukan")
@@ -171,9 +156,9 @@ def refine_bbox_with_opencv(image, bboxes):
         if roi.size == 0:
             continue
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        gray = cv2.GaussianBlur(gray, (5,5), 0)
+        gray = cv2.GaussianBlur(gray, (5, 5), 0)
         thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-        kernel = np.ones((5,5), np.uint8)
+        kernel = np.ones((5, 5), np.uint8)
         thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         for cnt in contours:
@@ -202,8 +187,8 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 def translate_text(text):
     if not text: return text
     try: return GoogleTranslator(source="en", target="id").translate(text)
-    except Exception: return text 
-    
+    except Exception: return text
+
 def translate_to_english(text):
     if not text: return text
     try: return GoogleTranslator(source='auto', target='en').translate(text)
@@ -220,204 +205,348 @@ def get_clean_url(path):
     clean_path = path.replace("\\", "/")
     return f"http://localhost:8000/{clean_path}"
 
+
+# ================== HELPER: PILIH PROMPT SINGLE ==================
+def get_single_prompt(analysis_type: str, detail_level: str) -> str:
+    tipe_lower = analysis_type.lower().strip()
+    if "xray" in tipe_lower or "x-ray" in tipe_lower:
+        return get_prompt_xrays(detail_level)
+    elif "fundus" in tipe_lower or "retina" in tipe_lower:
+        return get_prompt_fundus(detail_level)
+    elif "ct" in tipe_lower:
+        return get_prompt_ct(detail_level)
+    elif "endoscopy" in tipe_lower:
+        return get_prompt_endoscopy(detail_level)
+    else:
+        return get_prompt_xrays(detail_level)
+
+
+# ================== HELPER: PANGGIL AI UNTUK 1 GAMBAR ==================
+def call_ai_single(prompt: str, image_base64: str, mime_type: str) -> dict:
+    """
+    Panggil OpenAI untuk 1 gambar, return dict hasil JSON.
+    Raise Exception jika gagal.
+    """
+    response = client.responses.create(
+        model="gpt-4o-mini",
+        input=[{
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": prompt},
+                {"type": "input_image", "image_url": f"data:{mime_type};base64,{image_base64}"}
+            ]
+        }],
+        temperature=0.3
+    )
+    content_text = response.output[0].content[0].text
+    content_text = re.sub(r"```json|```", "", content_text).strip()
+    result = json.loads(content_text)
+    if "risk_factors" not in result:
+        result["risk_factors"] = {
+            "area": "-", "region_count": "-",
+            "intensity": "-", "calculation": "Tidak tersedia"
+        }
+    return result
+
+
+# ================== HELPER: GABUNGKAN HASIL MULTI-GAMBAR ==================
+def call_ai_combine(
+    per_image_results: list,
+    analysis_type: str,
+    detail_level: str,
+    symptoms_en: str = None
+) -> dict:
+    """
+    Panggil AI untuk menggabungkan hasil per-gambar menjadi 1 laporan.
+    """
+    prompt = get_prompt_combine_results(detail_level, analysis_type, per_image_results)
+    if symptoms_en:
+        prompt += f"\nPatient symptoms (for context): {symptoms_en}\n"
+
+    response = client.responses.create(
+        model="gpt-4o-mini",
+        input=[{
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": prompt}
+            ]
+        }],
+        temperature=0.3
+    )
+    content_text = response.output[0].content[0].text
+    content_text = re.sub(r"```json|```", "", content_text).strip()
+    combined = json.loads(content_text)
+    if "risk_factors" not in combined:
+        combined["risk_factors"] = {
+            "area": "-", "region_count": "-",
+            "intensity": "-", "calculation": "Tidak tersedia"
+        }
+    return combined
+
+
 # ================== MAIN ENDPOINT ==================
 @app.post("/analyze")
 async def analyze_xray(
-    image: UploadFile = File(...),
+    images: List[UploadFile] = File(...),
     symptoms: Optional[str] = Form(None),
     analysis_type: Optional[str] = Form("xray"),
     id_pasien: int = Form(...),
     detail_level: str = Form("medium"),
     db: Session = Depends(get_db)
-):  
+):
     if not os.getenv("OPENAI_API_KEY"):
         raise HTTPException(status_code=500, detail="OpenAI API key tidak ditemukan")
 
+    if not images or len(images) == 0:
+        raise HTTPException(status_code=400, detail="Minimal 1 gambar harus diupload")
+
+    if len(images) > 10:
+        raise HTTPException(status_code=400, detail="Maksimal 10 gambar per sesi")
+
     allowed_types = ["image/jpeg", "image/png"]
-    if image.content_type not in allowed_types:
-        raise HTTPException(status_code=400, detail="File harus JPG atau PNG")
+    for img in images:
+        if img.content_type not in allowed_types:
+            raise HTTPException(status_code=400, detail=f"File {img.filename} harus JPG atau PNG")
 
-    contents = await image.read()
-    if len(contents) > 100 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Ukuran file maksimal 100MB")
-
-    # ================== AMBIL INFO PASIEN ==================
+    # ── Info pasien & folder ────────────────────────────────
     no_rm, nama_pasien = get_patient_info_from_db(db, id_pasien)
+    jenis_bersih = analysis_type.strip()
+    img_dir = build_patient_jenis_dir(no_rm, nama_pasien, jenis_bersih)
+    prefix = f"{sanitize_folder_name(no_rm)}_{sanitize_folder_name(nama_pasien)}_{sanitize_jenis_name(jenis_bersih)}_"
+    seq = get_next_sequence(img_dir, prefix)
 
-    # ================== LOAD IMAGE ==================
-    pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
-
-    # ================== OPENAI ==================
-    buffered = io.BytesIO()
-    pil_image.save(buffered, format="JPEG")
-    image_base64 = base64.b64encode(buffered.getvalue()).decode()
-    mime_type = "image/jpeg"
-
-    tipe_lower = analysis_type.lower().strip()
-    if "xray" in tipe_lower or "x-ray" in tipe_lower:
-        prompt = get_prompt_xrays(detail_level)
-    elif "fundus" in tipe_lower or "retina" in tipe_lower:
-        prompt = get_prompt_fundus(detail_level)
-    elif "ct" in tipe_lower:
-        prompt = get_prompt_ct(detail_level)
-    elif "endoscopy" in tipe_lower:
-        prompt = get_prompt_endoscopy(detail_level)
-    else:
-        prompt = get_prompt_xrays(detail_level)
-    
+    # ── Translate symptoms ──────────────────────────────────
+    symptoms_en = None
     if symptoms:
         symptoms_en = translate_to_english(symptoms)
-        prompt += f"\nPatient symptoms: {symptoms_en}\n"
-        
-    mime_type = image.content_type
-    
-    response = client.responses.create(
-        model="gpt-5.4-mini",
-        input=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": prompt},
-                    {"type": "input_image", "image_url": f"data:{mime_type};base64,{image_base64}"}
-                ]
-            }
-        ],
-        temperature=0.3
-    )
 
-    try:
-        content = response.output[0].content[0].text
-        content = re.sub(r"```json|```", "", content).strip()
-        print("RAW AI:", content)
-        ai_result = json.loads(content)
-        
-        if "risk_factors" not in ai_result:
-            ai_result["risk_factors"] = {
-                "area": "-", "region_count": "-", "intensity": "-", "calculation": "Tidak tersedia"
-            }
+    # ── Baca semua gambar ke memori & simpan original ───────
+    images_data = []
 
-        # ================== SETUP FOLDER & FILENAME ==================
-        file_ext = image.filename.split(".")[-1].lower()
-        
-        # Tentukan jenis yang bersih untuk nama folder & file
-        jenis_bersih = analysis_type.strip()
-        
-        # Buat folder: uploads/patients/RM-001_BudiSantoso/xray/
-        img_dir = build_patient_jenis_dir(no_rm, nama_pasien, jenis_bersih)
-        
-        # Hitung nomor urut dari file yang sudah ada
-        prefix = f"{sanitize_folder_name(no_rm)}_{sanitize_folder_name(nama_pasien)}_{sanitize_jenis_name(jenis_bersih)}_"
-        seq = get_next_sequence(img_dir, prefix)
-        
-        # ================== SIMPAN GAMBAR ORIGINAL ==================
-        # Format: RM-001_BudiSantoso_xray_001_original.jpg
-        file_name_original = build_filename(no_rm, nama_pasien, jenis_bersih, seq, "original", file_ext)
+    for urutan, image_file in enumerate(images, start=1):
+        contents = await image_file.read()
+        if len(contents) > 100 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail=f"File {image_file.filename} melebihi 100MB")
+
+        file_ext = image_file.filename.split(".")[-1].lower()
+
+        # Simpan original
+        file_name_original = build_filename_multi(no_rm, nama_pasien, jenis_bersih, seq, urutan, "original", file_ext)
         file_path_original = os.path.join(img_dir, file_name_original)
         with open(file_path_original, "wb") as f:
             f.write(contents)
-        print(f"✅ Gambar Original Tersimpan: {file_path_original}")
 
-        # ================== SIMPAN KE DATABASE ==================
-        new_pem = models.Pemeriksaan(
-            id_pasien=id_pasien, 
-            no_reg=f"REG-{uuid.uuid4().hex[:6].upper()}", 
-            id_dokter=1
-        )
-        db.add(new_pem)
-        db.flush() 
+        # Konversi ke base64 untuk AI
+        pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
+        buffered = io.BytesIO()
+        pil_image.save(buffered, format="JPEG")
+        image_base64 = base64.b64encode(buffered.getvalue()).decode()
 
-        # Cari atau buat Jenis di DB
-        jenis_db = db.query(models.Jenis).filter(models.Jenis.nama_jenis.ilike(jenis_bersih)).first()
-        if jenis_db:
-            id_j = jenis_db.id_jenis
-        else:
-            print(f"Kategori '{jenis_bersih}' belum ada di DB. Membuat kategori baru...")
-            kategori_baru = models.Jenis(nama_jenis=jenis_bersih)
-            db.add(kategori_baru)
-            db.commit()
-            db.refresh(kategori_baru)
-            id_j = kategori_baru.id_jenis
+        images_data.append({
+            "urutan": urutan,
+            "pil_image": pil_image,
+            "image_base64": image_base64,
+            "mime_type": "image/jpeg",
+            "path_original": file_path_original,
+            "file_ext": file_ext,
+        })
 
-        new_anal = models.Analisis(
-            id_pemeriksaan=new_pem.id_pemeriksaan,
-            id_jenis=id_j,
-            gambar_asli=file_path_original,       # Path gambar original
-            gambar_hasil=None,                     # Diisi setelah bbox digambar
-            gambar_dokter=None,                    # Diisi saat dokter simpan anotasi
-            teks_hasil_analisis=json.dumps(ai_result),
-            ai_bboxes=json.dumps(ai_result.get("bboxes", [])),
-            doctor_bboxes=json.dumps([]),            
-            status="Selesai"
-        )
-        db.add(new_anal)
-        db.commit()
-        print(f"✅ Data Tersimpan di DB. Record ID: {new_anal.id_analisis}")
-
-        # ================== TRANSLATE RESULT ==================
-        ai_result["findings"] = translate_text(ai_result.get("findings"))
-        ai_result["abnormality"] = translate_text(ai_result.get("abnormality"))
-        ai_result["recommendation"]["approach"] = translate_text(ai_result["recommendation"].get("approach"))
-        ai_result["recommendation"]["treatment"] = translate_text(ai_result["recommendation"].get("treatment"))
-        ai_result["risk_factors"]["calculation"] = translate_text(ai_result["risk_factors"].get("calculation"))
-        ai_result["risk_factors"]["area"] = translate_text(ai_result["risk_factors"].get("area"))
-        ai_result["risk_factors"]["region_count"] = translate_text(str(ai_result["risk_factors"].get("region_count")))
-        ai_result["risk_factors"]["intensity"] = translate_text(ai_result["risk_factors"].get("intensity"))
-
-        required_keys = ["findings", "abnormality", "risk", "bboxes", "recommendation"]
-        for key in required_keys:
-            if key not in ai_result:
-                raise HTTPException(status_code=500, detail=f"{key} tidak ada di response AI")
-
-    except Exception as e:
-        print("ERROR:", str(e))
-        raise HTTPException(status_code=500, detail="Format AI tidak valid")
+    # ── Analisis AI: setiap gambar pakai prompt SINGLE ──────
+    # Strategi: analisis per-gambar → hasilnya akurat per gambar
+    # Lalu jika multi-gambar → combine dengan 1 call AI lagi
     
-    # ================== BBOX & SEGMENTASI ==================
-    bboxes = ai_result.get("bboxes", [])
-    if not bboxes:
-        print("AI tidak mendeteksi area abnormal")
+    single_prompt = get_single_prompt(jenis_bersih, detail_level)
+    if symptoms_en:
+        single_prompt += f"\nPatient symptoms: {symptoms_en}\n"
 
-    overlay = np.array(pil_image)
+    per_image_results = []  # hasil AI per gambar
 
-    if analysis_type == "xray":
-        refined_boxes = refine_bbox_with_opencv(overlay, bboxes)
+    for img_data in images_data:
+        try:
+            result_single = call_ai_single(
+                prompt=single_prompt,
+                image_base64=img_data["image_base64"],
+                mime_type=img_data["mime_type"]
+            )
+            per_image_results.append(result_single)
+            print(f"✅ Gambar {img_data['urutan']} selesai dianalisis. Risk: {result_single.get('risk', 0)}, BBoxes: {len(result_single.get('bboxes', []))}")
+        except Exception as e:
+            print(f"❌ ERROR analisis gambar {img_data['urutan']}: {e}")
+            raise HTTPException(status_code=500, detail=f"Gagal analisis gambar {img_data['urutan']}: {str(e)}")
+
+    # ── Gabungkan hasil ──────────────────────────────────────
+    total_images = len(images_data)
+
+    if total_images == 1:
+        # Single image: langsung pakai hasil single
+        ai_result = per_image_results[0]
+        print(f"✅ Single image mode. Risk: {ai_result.get('risk')}")
     else:
-        refined_boxes = []
+        # Multi image: combine semua hasil dengan 1 call AI
+        try:
+            ai_result = call_ai_combine(
+                per_image_results=per_image_results,
+                analysis_type=jenis_bersih,
+                detail_level=detail_level,
+                symptoms_en=symptoms_en
+            )
+            print(f"✅ Multi image combined. Risk: {ai_result.get('risk')}")
+        except Exception as e:
+            print(f"❌ ERROR combine: {e}. Fallback ke hasil gambar pertama.")
+            # Fallback: pakai hasil gambar pertama
+            ai_result = per_image_results[0]
 
-    if refined_boxes:
-        overlay = draw_boxes(overlay, refined_boxes)
-    else:
-        print("Fallback ke bbox AI")
+    # ── Pastikan bboxes top-level ada ────────────────────────
+    if "bboxes" not in ai_result:
+        ai_result["bboxes"] = []
 
-    h, w, _ = overlay.shape
-    for bbox in bboxes:
-        x = int(bbox["x"] * w)
-        y = int(bbox["y"] * h)
-        bw = int(bbox["width"] * w)
-        bh = int(bbox["height"] * h)
-        overlay = draw_boxes(overlay, [(x, y, bw, bh)])
-
-    # ================== SIMPAN GAMBAR HASIL AI ==================
-    # Format: RM-001_BudiSantoso_xray_001_ai.jpg
-    file_name_ai = build_filename(no_rm, nama_pasien, jenis_bersih, seq, "ai", "jpg")
-    file_path_ai = os.path.join(img_dir, file_name_ai)
-    cv2.imwrite(file_path_ai, cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
-    print(f"✅ Gambar AI Tersimpan: {file_path_ai}")
-
-    # ================== UPDATE DB: GAMBAR HASIL AI ==================
-    analisis_baru = db.query(models.Analisis).filter(models.Analisis.id_analisis == new_anal.id_analisis).first()
-    if analisis_baru:
-        analisis_baru.gambar_hasil = file_path_ai
+    # ── Simpan ke database ──────────────────────────────────
+    jenis_db = db.query(models.Jenis).filter(models.Jenis.nama_jenis.ilike(jenis_bersih)).first()
+    if not jenis_db:
+        kategori_baru = models.Jenis(nama_jenis=jenis_bersih)
+        db.add(kategori_baru)
         db.commit()
+        db.refresh(kategori_baru)
+        id_j = kategori_baru.id_jenis
+    else:
+        id_j = jenis_db.id_jenis
 
-    # ================== FINAL ==================
-    overlay = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)
-    base64_img = to_base64(overlay)
-    
+    new_pem = models.Pemeriksaan(
+        id_pasien=id_pasien,
+        no_reg=f"REG-{uuid.uuid4().hex[:6].upper()}",
+        id_dokter=1
+    )
+    db.add(new_pem)
+    db.flush()
+
+    first = images_data[0]
+
+    # Analisis utama — simpan AI result gabungan
+    new_anal = models.Analisis(
+        id_pemeriksaan=new_pem.id_pemeriksaan,
+        id_jenis=id_j,
+        gambar_asli=first["path_original"],
+        gambar_hasil=None,      # Tidak ada gambar hasil AI (bbox di frontend)
+        gambar_dokter=None,
+        teks_hasil_analisis=json.dumps(ai_result),
+        ai_bboxes=json.dumps(ai_result.get("bboxes", [])),
+        doctor_bboxes=json.dumps([]),
+        status="Selesai"
+    )
+    db.add(new_anal)
+    db.flush()
+
+    # GambarAnalisis per gambar — simpan path + bboxes per gambar
+    processed_images = []
+    for i, img_data in enumerate(images_data):
+        urutan = img_data["urutan"]
+        # Ambil bboxes dari hasil per-gambar (bukan combined)
+        bboxes_for_this = per_image_results[i].get("bboxes", []) if i < len(per_image_results) else []
+
+        gambar_rec = models.GambarAnalisis(
+            id_analisis=new_anal.id_analisis,
+            urutan=urutan,
+            gambar_asli=img_data["path_original"],
+            gambar_hasil=None,      # Tidak ada gambar hasil AI (bbox di frontend)
+            teks_hasil_analisis=None,
+            ai_bboxes=json.dumps(bboxes_for_this),
+            doctor_bboxes=json.dumps([]),
+        )
+        db.add(gambar_rec)
+
+        processed_images.append({
+            "urutan": urutan,
+            "path_original": img_data["path_original"],
+            "bboxes": bboxes_for_this,
+        })
+
+    db.commit()
+    print(f"✅ Analisis ID {new_anal.id_analisis} dengan {total_images} gambar tersimpan.")
+
+    # ── Normalisasi semua field: pastikan semua value adalah string ──────────
+    def safe_str(val):
+        """Flatten any value to plain string."""
+        if val is None:
+            return "-"
+        if isinstance(val, list):
+            # List of objects/strings → join jadi teks bernomor
+            parts = []
+            for i, item in enumerate(val, 1):
+                if isinstance(item, dict):
+                    # Coba ambil field name/disease/condition dulu
+                    name = item.get("name") or item.get("disease") or item.get("condition") or item.get("title") or ""
+                    desc = item.get("description") or item.get("explanation") or item.get("detail") or ""
+                    if name:
+                        parts.append(f"{i}. {name}\n→ {desc}" if desc else f"{i}. {name}")
+                    else:
+                        parts.append(f"{i}. " + ", ".join(f"{k}: {v}" for k, v in item.items()))
+                else:
+                    parts.append(str(item))
+            return "\n\n".join(parts) if parts else "-"
+        if isinstance(val, dict):
+            # Dict dengan numeric keys atau nested
+            parts = []
+            for i, (k, v) in enumerate(val.items(), 1):
+                if isinstance(v, dict):
+                    name = v.get("name") or v.get("disease") or str(k)
+                    desc = v.get("description") or v.get("explanation") or ""
+                    parts.append(f"{i}. {name}\n→ {desc}" if desc else f"{i}. {name}")
+                else:
+                    parts.append(f"{i}. {k}: {v}")
+            return "\n\n".join(parts) if parts else "-"
+        return str(val)
+
+    # Normalisasi abnormality (sering jadi array atau dict dari AI)
+    raw_abnormality = ai_result.get("abnormality", "-")
+    if not isinstance(raw_abnormality, str):
+        ai_result["abnormality"] = safe_str(raw_abnormality)
+
+    # Normalisasi findings
+    raw_findings = ai_result.get("findings", "-")
+    if not isinstance(raw_findings, str):
+        ai_result["findings"] = safe_str(raw_findings)
+
+    # Normalisasi risk_factors
+    rf = ai_result.get("risk_factors", {})
+    if not isinstance(rf, dict):
+        rf = {}
+    normalized_rf = {
+        "area":         safe_str(rf.get("area") or rf.get("location") or rf.get("lesion_size") or rf.get("lesion_count") or "-"),
+        "region_count": safe_str(rf.get("region_count") or rf.get("distribution") or "-"),
+        "intensity":    safe_str(rf.get("intensity") or rf.get("severity") or rf.get("mass_effect") or "-"),
+        "calculation":  safe_str(rf.get("calculation") or "-"),
+    }
+    ai_result["risk_factors"] = normalized_rf
+
+    # ── Translate hasil untuk response ───────────────────────
+    ai_result["findings"]    = translate_text(ai_result.get("findings") or "")
+    ai_result["abnormality"] = translate_text(ai_result.get("abnormality") or "")
+    if isinstance(ai_result.get("recommendation"), dict):
+        ai_result["recommendation"]["approach"] = translate_text(ai_result["recommendation"].get("approach") or "")
+        ai_result["recommendation"]["treatment"] = translate_text(ai_result["recommendation"].get("treatment") or "")
+    else:
+        ai_result["recommendation"] = {"approach": "-", "treatment": "-"}
+    ai_result["risk_factors"]["calculation"]  = translate_text(ai_result["risk_factors"]["calculation"])
+    ai_result["risk_factors"]["area"]         = translate_text(ai_result["risk_factors"]["area"])
+    ai_result["risk_factors"]["region_count"] = translate_text(ai_result["risk_factors"]["region_count"])
+    ai_result["risk_factors"]["intensity"]    = translate_text(ai_result["risk_factors"]["intensity"])
+
     return {
-        "record_id": analisis_baru.id_analisis if analisis_baru else None,
+        "record_id": new_anal.id_analisis,
         "result": ai_result,
-        "segmentation_image": base64_img
+        "segmentation_image": None,    # Tidak ada lagi — bbox di frontend overlay
+        "total_images": total_images,
+        # Semua gambar untuk slider di frontend
+        "images": [
+            {
+                "urutan": item["urutan"],
+                "segmentation_image": None,
+                "original_url": get_clean_url(item["path_original"]),
+                "ai_url": None,
+                "ai_bboxes": item["bboxes"],
+            }
+            for item in processed_images
+        ]
     }
 
 
@@ -426,6 +555,7 @@ async def analyze_xray(
 class PasienCreate(BaseModel):
     no_rm: str
     nama_pasien: str
+
 
 @app.get("/api/patients")
 def get_all_patients(db: Session = Depends(get_db)):
@@ -442,8 +572,10 @@ def get_all_patients(db: Session = Depends(get_db)):
         })
     return {"status": "success", "data": result}
 
+
 class JenisCreate(BaseModel):
     nama_jenis: str
+
 
 @app.post("/api/jenis")
 def create_jenis(jenis: JenisCreate, db: Session = Depends(get_db)):
@@ -452,6 +584,7 @@ def create_jenis(jenis: JenisCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_jenis)
     return {"message": "Jenis berhasil ditambahkan", "data": db_jenis}
+
 
 @app.get("/api/jenis")
 def get_all_jenis(db: Session = Depends(get_db)):
@@ -464,17 +597,15 @@ def get_all_jenis(db: Session = Depends(get_db)):
 async def save_analysis(
     id_pasien: int = Form(...),
     id_jenis: int = Form(...),
-    teks_hasil_analisis: Optional[str] = Form(None), 
+    teks_hasil_analisis: Optional[str] = Form(None),
     gambar_asli: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    # Ambil info pasien & jenis dari DB
     no_rm, nama_pasien = get_patient_info_from_db(db, id_pasien)
-    
+
     jenis_db = db.query(models.Jenis).filter(models.Jenis.id_jenis == id_jenis).first()
     jenis_nama = jenis_db.nama_jenis if jenis_db else "umum"
 
-    # Buat folder & nama file
     file_ext = gambar_asli.filename.split(".")[-1].lower()
     img_dir = build_patient_jenis_dir(no_rm, nama_pasien, jenis_nama)
     prefix = f"{sanitize_folder_name(no_rm)}_{sanitize_folder_name(nama_pasien)}_{sanitize_jenis_name(jenis_nama)}_"
@@ -506,20 +637,23 @@ async def save_analysis(
 @app.get("/api/patients/{id_pasien}")
 def get_patient_detail(id_pasien: int, db: Session = Depends(get_db)):
     pasien = db.query(models.Pasien).filter(models.Pasien.id_pasien == id_pasien).first()
-    if not pasien: raise HTTPException(status_code=404)
-    
+    if not pasien:
+        raise HTTPException(status_code=404)
+
     patient_data = {
         "id_pasien": pasien.id_pasien,
         "no_rm": pasien.no_rm,
         "nama_pasien": pasien.nama_pasien,
-        "age": pasien.umur,
+        "umur": pasien.umur,
         "gender": pasien.gender,
         "bloodType": pasien.blood_type
     }
-    
+
     history = []
-    records = db.query(models.Analisis).join(models.Pemeriksaan).filter(models.Pemeriksaan.id_pasien == id_pasien).all()
-    
+    records = db.query(models.Analisis).join(models.Pemeriksaan).filter(
+        models.Pemeriksaan.id_pasien == id_pasien
+    ).all()
+
     for r in records:
         history.append({
             "id_record": r.id_analisis,
@@ -532,8 +666,9 @@ def get_patient_detail(id_pasien: int, db: Session = Depends(get_db)):
             "doctor_bboxes": json.loads(r.doctor_bboxes) if r.doctor_bboxes else [],
             "gambar_hasil_url": get_clean_url(r.gambar_hasil),
             "gambar_dokter_url": get_clean_url(r.gambar_dokter) if hasattr(r, 'gambar_dokter') else None,
+            "total_images": len(r.gambar_list),
         })
-            
+
     return {"status": "success", "patient": patient_data, "history": history}
 
 
@@ -560,84 +695,119 @@ async def get_record_detail(id_analisis: int, db: Session = Depends(get_db)):
             "risk": 0,
             "recommendation": {"approach": "-", "treatment": "-"}
         }
-    
+
+    # ── Gambar list dari GambarAnalisis ──
+    gambar_list = []
+    for g in analisis.gambar_list:
+        gambar_list.append({
+            "id_gambar": g.id_gambar,
+            "urutan": g.urutan,
+            "gambar_asli_url": get_clean_url(g.gambar_asli),
+            "gambar_hasil_url": get_clean_url(g.gambar_hasil),   # None jika pakai overlay
+            "gambar_dokter_url": get_clean_url(g.gambar_dokter),
+            "ai_result": None,
+            "ai_bboxes": json.loads(g.ai_bboxes) if g.ai_bboxes else [],
+            "doctor_bboxes": json.loads(g.doctor_bboxes) if g.doctor_bboxes else [],
+            "doctor_notes": json.loads(g.doctor_notes) if g.doctor_notes else None,
+        })
+
+    # Fallback kalau gambar_list kosong (data lama)
+    if not gambar_list:
+        gambar_list = [{
+            "id_gambar": "main",
+            "urutan": 1,
+            "gambar_asli_url": get_clean_url(analisis.gambar_asli),
+            "gambar_hasil_url": get_clean_url(analisis.gambar_hasil),
+            "gambar_dokter_url": get_clean_url(analisis.gambar_dokter),
+            "ai_result": None,
+            "ai_bboxes": json.loads(analisis.ai_bboxes) if analisis.ai_bboxes else [],
+            "doctor_bboxes": json.loads(analisis.doctor_bboxes) if analisis.doctor_bboxes else [],
+            "doctor_notes": json.loads(analisis.doctor_notes) if analisis.doctor_notes else None,
+        }]
+
     return {
         "status": "success",
         "data": {
             "id_analisis": analisis.id_analisis,
             "gambar_asli_url": get_clean_url(analisis.gambar_asli),
             "gambar_hasil_url": get_clean_url(analisis.gambar_hasil),
-            # ✅ URL gambar anotasi dokter (file disimpan saat doctor-update)
-            "gambar_dokter_url": get_clean_url(analisis.gambar_dokter) if hasattr(analisis, 'gambar_dokter') else None,
+            "gambar_dokter_url": get_clean_url(analisis.gambar_dokter),
             "ai_result": hasil_json,
             "doctor_notes": json.loads(analisis.doctor_notes) if analisis.doctor_notes else None,
             "ai_bboxes": json.loads(analisis.ai_bboxes) if analisis.ai_bboxes else [],
             "doctor_bboxes": json.loads(analisis.doctor_bboxes) if analisis.doctor_bboxes else [],
+            "gambar_list": gambar_list,
+            "total_images": len(gambar_list),
+            "patient_name": analisis.pemeriksaan.pasien.nama_pasien if analisis.pemeriksaan and analisis.pemeriksaan.pasien else "Pasien",
+            "no_rm": analisis.pemeriksaan.pasien.no_rm if analisis.pemeriksaan and analisis.pemeriksaan.pasien else "-",
+            "jenis": analisis.jenis.nama_jenis if analisis.jenis else "X-Ray",
         }
     }
 
 
-# ================== DOCTOR UPDATE (+ SIMPAN GAMBAR DOKTER) ==================
+# ================== DOCTOR UPDATE ==================
 @app.put("/api/records/{id_analisis}/doctor-update")
 async def update_doctor_data(
     id_analisis: int,
     doctor_notes: Optional[str] = Form(None),
     doctor_bboxes: Optional[str] = Form(None),
-    # ✅ BARU: Terima gambar hasil anotasi dokter (opsional)
-    # Frontend bisa kirim file gambar hasil canvas dokter sebagai FormData
     doctor_image: Optional[UploadFile] = File(None),
+    id_gambar: Optional[int] = Form(None),
     db: Session = Depends(get_db)
 ):
     analisis = db.query(models.Analisis).filter(models.Analisis.id_analisis == id_analisis).first()
     if not analisis:
         raise HTTPException(status_code=404, detail="Data tidak ditemukan")
 
+    target_gambar = None
+    if id_gambar is not None:
+        target_gambar = db.query(models.GambarAnalisis).filter(
+            models.GambarAnalisis.id_gambar == id_gambar,
+            models.GambarAnalisis.id_analisis == id_analisis
+        ).first()
+
+    target = target_gambar if target_gambar else analisis
     if doctor_bboxes is not None:
-        analisis.doctor_bboxes = doctor_bboxes
-
+        target.doctor_bboxes = doctor_bboxes
     if doctor_notes is not None:
-        analisis.doctor_notes = doctor_notes
+        target.doctor_notes = doctor_notes
+        if target_gambar:
+            analisis.doctor_notes = doctor_notes
 
-    # ✅ SIMPAN GAMBAR DOKTER JIKA ADA
     if doctor_image is not None:
-        # Ambil info pasien & jenis dari relasi analisis
         pemeriksaan = analisis.pemeriksaan
         pasien = pemeriksaan.pasien
         no_rm = pasien.no_rm
         nama_pasien = pasien.nama_pasien
         jenis_nama = analisis.jenis.nama_jenis if analisis.jenis else "umum"
+        file_ext = "jpg"
 
-        file_ext = doctor_image.filename.split(".")[-1].lower() if doctor_image.filename else "jpg"
         img_dir = build_patient_jenis_dir(no_rm, nama_pasien, jenis_nama)
 
-        # Cari nomor urut dari nama gambar_asli yang sudah ada
-        # Format gambar_asli: .../RM-001_Budi_xray_001_original.jpg
-        # Kita ambil nomor urut dari nama file gambar_asli
+        ref_path = target_gambar.gambar_asli if target_gambar else analisis.gambar_asli
         seq = 1
-        if analisis.gambar_asli:
-            base_name = os.path.basename(analisis.gambar_asli)
-            # Cari pola _NNN_ dari nama file
-            match = re.search(r'_(\d{3})_original', base_name)
-            if match:
-                seq = int(match.group(1))
+        urutan = 1
+        if ref_path:
+            base_name = os.path.basename(ref_path)
+            m_seq = re.search(r'_(\d{3})_img(\d+)_', base_name)
+            if m_seq:
+                seq = int(m_seq.group(1))
+                urutan = int(m_seq.group(2))
+            else:
+                m_old = re.search(r'_(\d{3})_original', base_name)
+                if m_old:
+                    seq = int(m_old.group(1))
 
-        # Simpan dengan suffix "doctor"
-        # Format: RM-001_BudiSantoso_xray_001_doctor.jpg
-        file_name_doctor = build_filename(no_rm, nama_pasien, jenis_nama, seq, "doctor", file_ext)
+        file_name_doctor = build_filename_multi(no_rm, nama_pasien, jenis_nama, seq, urutan, "doctor", file_ext)
         file_path_doctor = os.path.join(img_dir, file_name_doctor)
-        
+
         img_contents = await doctor_image.read()
         with open(file_path_doctor, "wb") as f:
             f.write(img_contents)
-        
-        print(f"✅ Gambar Dokter Tersimpan: {file_path_doctor}")
 
-        # Simpan path ke DB (butuh kolom gambar_dokter di model Analisis)
-        if hasattr(analisis, 'gambar_dokter'):
-            analisis.gambar_dokter = file_path_doctor
+        target.gambar_dokter = file_path_doctor
 
     db.commit()
-    db.refresh(analisis)
     return {"status": "success"}
 
 
@@ -649,7 +819,7 @@ def reset_analysis(id_analisis: int, db: Session = Depends(get_db)):
         analisis.teks_hasil_analisis = None
         analisis.gambar_hasil = None
         db.commit()
-        return {"msg": "Data direset, silakan refresh halaman Detail di React"}
+        return {"msg": "Data direset"}
 
 
 # ================== SEEDING DATA DUMMY ==================

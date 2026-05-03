@@ -46,14 +46,15 @@ class Analisis(Base):
     id_pemeriksaan = Column(Integer, ForeignKey("pemeriksaan.id_pemeriksaan"))
     id_jenis = Column(Integer, ForeignKey("jenis.id_jenis"))
     
-    gambar_asli = Column(String, nullable=True)         # Path gambar original
-    gambar_hasil = Column(String, nullable=True)        # Path gambar hasil segmentasi AI
-    gambar_dokter = Column(String, nullable=True)       # ✅ Path gambar anotasi dokter (BARU)
+    # Gambar pertama (backward compat) — tetap dipakai sebagai cover/thumbnail
+    gambar_asli = Column(String, nullable=True)
+    gambar_hasil = Column(String, nullable=True)
+    gambar_dokter = Column(String, nullable=True)
 
-    teks_hasil_analisis = Column(Text, nullable=True)   # JSON AI Result
-    ai_bboxes = Column(Text, nullable=True)             # JSON bbox dari AI
-    doctor_bboxes = Column(Text, nullable=True)         # JSON bbox dari dokter
-    doctor_notes = Column(Text, nullable=True)          # JSON catatan dokter
+    teks_hasil_analisis = Column(Text, nullable=True)   # JSON AI Result gambar pertama
+    ai_bboxes = Column(Text, nullable=True)
+    doctor_bboxes = Column(Text, nullable=True)
+    doctor_notes = Column(Text, nullable=True)
     
     hasil_pdf = Column(String, nullable=True)
     status = Column(String, default="Selesai")
@@ -61,3 +62,30 @@ class Analisis(Base):
 
     pemeriksaan = relationship("Pemeriksaan", back_populates="analisis")
     jenis = relationship("Jenis", back_populates="analisis")
+    # ✅ Relasi ke tabel gambar (1 analisis → banyak gambar)
+    gambar_list = relationship("GambarAnalisis", back_populates="analisis", order_by="GambarAnalisis.urutan")
+
+
+class GambarAnalisis(Base):
+    """
+    Tabel untuk menyimpan multiple gambar dalam satu sesi analisis.
+    1 Analisis → banyak GambarAnalisis (urutan 1, 2, 3, ...)
+    """
+    __tablename__ = "gambar_analisis"
+
+    id_gambar = Column(Integer, primary_key=True, index=True)
+    id_analisis = Column(Integer, ForeignKey("analisis.id_analisis"))
+    urutan = Column(Integer, default=1)             # Urutan gambar (1-based)
+
+    gambar_asli = Column(String, nullable=True)     # Path file original
+    gambar_hasil = Column(String, nullable=True)    # Path file segmentasi AI
+    gambar_dokter = Column(String, nullable=True)   # Path file anotasi dokter
+
+    teks_hasil_analisis = Column(Text, nullable=True)  # JSON AI result per gambar
+    ai_bboxes = Column(Text, nullable=True)
+    doctor_bboxes = Column(Text, nullable=True)
+    doctor_notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    analisis = relationship("Analisis", back_populates="gambar_list")

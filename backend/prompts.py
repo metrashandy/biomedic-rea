@@ -769,3 +769,288 @@ Return ONLY valid JSON. No explanation, no markdown.
 }}
 }}
 """
+
+# ================================================================================
+# PROMPT MULTI-GAMBAR
+# Tambahkan fungsi-fungsi ini ke file prompts.py yang sudah ada
+# ================================================================================
+
+def get_prompt_xrays_multi(detail_level, total_images):
+    return f"""
+You are analyzing {total_images} chest X-ray images from the SAME patient in ONE session.
+
+Your task: Produce ONE COMBINED analysis report covering all {total_images} images together.
+
+Focus ONLY on lung fields across all images. Do NOT analyze heart, bones, or diaphragm.
+
+------------------------
+DETAIL LEVEL: {detail_level}
+------------------------
+IF short: Findings 2-3 sentences, Abnormality 3 diseases, Recommendation 1 sentence each
+IF medium: Findings 6-8 sentences, Abnormality 3 diseases, Recommendation 3 sentences each
+IF long: Findings 10-12 sentences, Abnormality 3 diseases, Recommendation 5 sentences each
+
+------------------------
+COMBINED ANALYSIS RULES
+------------------------
+- Write ONE unified findings section covering all {total_images} images
+- Compare findings across images (e.g. "Image 1 shows..., while Image 2 shows...")
+- Identify consistent vs varying abnormalities across images
+- Give ONE overall risk score that considers all images together
+- Give ONE recommendation based on combined findings
+
+------------------------
+BOUNDING BOXES PER IMAGE
+------------------------
+Return bboxes for EACH image separately in "images_bboxes" array.
+Each entry: {{ "image": N, "bboxes": [...] }}
+Maximum 5 boxes per image. Normalized coordinates (0-1).
+If no abnormality in an image, use empty array [].
+
+Also set top-level "bboxes" = bboxes from image 1 (for backward compatibility).
+
+------------------------
+OUTPUT FORMAT
+------------------------
+Return ONLY valid JSON. No explanation, no markdown.
+
+{{
+  "findings": "Combined narrative covering all {total_images} images...",
+  "abnormality": "...",
+  "risk": 0-100,
+  "risk_factors": {{
+    "area": "...",
+    "region_count": "...",
+    "intensity": "...",
+    "calculation": "Combined risk from {total_images} images: ..."
+  }},
+  "bboxes": [...],
+  "images_bboxes": [
+    {{ "image": 1, "bboxes": [...] }},
+    {{ "image": 2, "bboxes": [...] }}
+  ],
+  "recommendation": {{
+    "approach": "...",
+    "treatment": "..."
+  }}
+}}
+"""
+
+
+def get_prompt_fundus_multi(detail_level, total_images):
+    return f"""
+You are analyzing {total_images} retinal fundus images from the SAME patient in ONE session.
+
+Your task: Produce ONE COMBINED analysis report covering all {total_images} images.
+
+Focus ONLY on retinal structures.
+
+------------------------
+DETAIL LEVEL: {detail_level}
+------------------------
+IF short: Findings 2-3 sentences, Abnormality 3 diseases, Recommendation 1 sentence each
+IF medium: Findings 6-8 sentences, Abnormality 3 diseases, Recommendation 3 sentences each
+IF long: Findings 10-12 sentences, Abnormality 3 diseases, Recommendation 5 sentences each
+
+------------------------
+COMBINED ANALYSIS RULES
+------------------------
+- Write ONE unified findings section covering all {total_images} images
+- Note which eye each image represents if identifiable (left/right)
+- Compare retinal findings across images
+- Give ONE overall risk score considering all images
+- Give ONE recommendation based on combined findings
+
+------------------------
+BOUNDING BOXES PER IMAGE
+------------------------
+Return bboxes for EACH image separately in "images_bboxes" array.
+Each entry: {{ "image": N, "bboxes": [...] }}
+Maximum 5 boxes per image. Normalized coordinates (0-1).
+
+Also set top-level "bboxes" = bboxes from image 1.
+
+------------------------
+OUTPUT FORMAT
+------------------------
+Return ONLY valid JSON. No explanation, no markdown.
+
+{{
+  "findings": "Combined narrative covering all {total_images} images...",
+  "abnormality": "...",
+  "risk": 0-100,
+  "risk_factors": {{
+    "lesion_count": "...",
+    "distribution": "...",
+    "severity": "...",
+    "calculation": "Combined from {total_images} images: ..."
+  }},
+  "bboxes": [...],
+  "images_bboxes": [
+    {{ "image": 1, "bboxes": [...] }},
+    {{ "image": 2, "bboxes": [...] }}
+  ],
+  "recommendation": {{
+    "approach": "...",
+    "treatment": "..."
+  }}
+}}
+"""
+
+
+def get_prompt_ct_multi(detail_level, total_images):
+    return f"""
+You are analyzing {total_images} brain CT scan slices/images from the SAME patient in ONE session.
+
+Your task: Produce ONE COMBINED analysis report covering all {total_images} images.
+
+Focus ONLY on intracranial structures.
+
+------------------------
+DETAIL LEVEL: {detail_level}
+------------------------
+IF short: Findings 2-3 sentences, Abnormality 3 conditions, Recommendation 1 sentence each
+IF medium: Findings 6-8 sentences, Abnormality 3 conditions, Recommendation 3 sentences each
+IF long: Findings 10-12 sentences, Abnormality 3 conditions, Recommendation 5 sentences each
+
+------------------------
+COMBINED ANALYSIS RULES
+------------------------
+- Write ONE unified findings section covering all {total_images} CT slices
+- Describe findings across slices/planes (axial, coronal, sagittal if identifiable)
+- Note progression or distribution of findings across slices
+- Give ONE overall risk score considering all images
+- Give ONE recommendation based on combined findings
+
+------------------------
+BOUNDING BOXES PER IMAGE
+------------------------
+Return bboxes for EACH image separately in "images_bboxes" array.
+Each entry: {{ "image": N, "bboxes": [...] }}
+Maximum 5 boxes per image. Normalized coordinates (0-1).
+
+Also set top-level "bboxes" = bboxes from image 1.
+
+------------------------
+OUTPUT FORMAT
+------------------------
+Return ONLY valid JSON. No explanation, no markdown.
+
+{{
+  "findings": "Combined narrative covering all {total_images} CT slices...",
+  "abnormality": "...",
+  "risk": 0-100,
+  "risk_factors": {{
+    "lesion_size": "...",
+    "location": "...",
+    "mass_effect": "...",
+    "calculation": "Combined from {total_images} slices: ..."
+  }},
+  "bboxes": [...],
+  "images_bboxes": [
+    {{ "image": 1, "bboxes": [...] }},
+    {{ "image": 2, "bboxes": [...] }}
+  ],
+  "recommendation": {{
+    "approach": "...",
+    "treatment": "..."
+  }}
+}}
+"""
+
+
+def get_prompt_combine_results(detail_level, analysis_type, per_image_results):
+    """
+    Prompt untuk menggabungkan hasil analisis per-gambar menjadi satu laporan.
+    per_image_results: list of dict hasil JSON dari masing-masing gambar
+    """
+    results_text = ""
+    for i, r in enumerate(per_image_results, start=1):
+        results_text += f"""
+--- IMAGE {i} ---
+Findings: {r.get('findings', '-')}
+Abnormality: {r.get('abnormality', '-')}
+Risk: {r.get('risk', 0)}
+Risk Factors: {r.get('risk_factors', {})}
+Bboxes count: {len(r.get('bboxes', []))}
+Recommendation Approach: {r.get('recommendation', {}).get('approach', '-')}
+Recommendation Treatment: {r.get('recommendation', {}).get('treatment', '-')}
+"""
+ 
+    detail_rules = {
+        "short": "Findings: 3-4 sentences. Recommendation: 1-2 sentences each.",
+        "medium": "Findings: 6-8 sentences. Recommendation: 3 sentences each.",
+        "long": "Findings: 10-12 sentences. Recommendation: 5 sentences each.",
+    }.get(detail_level, "Findings: 6-8 sentences. Recommendation: 3 sentences each.")
+ 
+    risk_key_hint = ""
+    if "xray" in analysis_type.lower() or "x-ray" in analysis_type.lower():
+        risk_key_hint = '"area": "...", "region_count": "...", "intensity": "...", "calculation": "..."'
+    elif "fundus" in analysis_type.lower() or "retina" in analysis_type.lower():
+        risk_key_hint = '"lesion_count": "...", "distribution": "...", "severity": "...", "calculation": "..."'
+    elif "ct" in analysis_type.lower():
+        risk_key_hint = '"lesion_size": "...", "location": "...", "mass_effect": "...", "calculation": "..."'
+    elif "endoscopy" in analysis_type.lower():
+        risk_key_hint = '"lesion_count": "...", "distribution": "...", "severity": "...", "calculation": "..."'
+    else:
+        risk_key_hint = '"area": "...", "region_count": "...", "intensity": "...", "calculation": "..."'
+ 
+    return f"""
+You are a radiologist/specialist creating ONE UNIFIED clinical report.
+ 
+You have received individual AI analysis results for {len(per_image_results)} medical images from the SAME patient session.
+ 
+Your task: Synthesize these results into ONE comprehensive combined report.
+ 
+------------------------
+INDIVIDUAL ANALYSIS RESULTS
+------------------------
+{results_text}
+ 
+------------------------
+SYNTHESIS RULES
+------------------------
+- Write ONE unified "findings" narrative that covers all images
+- Reference specific images when noting differences (e.g. "Gambar 1 menunjukkan..., sementara Gambar 2...")
+- Identify patterns consistent across all images
+- Note any contradictions or varying findings between images
+- Give ONE overall risk score (weighted average, favor higher risk if any image is high)
+- Give ONE unified recommendation
+ 
+Detail level: {detail_level}
+{detail_rules}
+ 
+------------------------
+LANGUAGE
+------------------------
+- Findings: professional radiology/clinical narrative style
+- Abnormality: numbered list with medical name + simple Indonesian explanation
+- Recommendation: formal clinical tone for healthcare professionals
+ 
+------------------------
+RISK SCORE
+------------------------
+- Range: 0-100
+- Consider the HIGHEST risk finding across all images
+- If images disagree, use the highest risk as the combined score
+- Explain reasoning briefly in "calculation"
+ 
+------------------------
+OUTPUT FORMAT
+------------------------
+Return ONLY valid JSON. No explanation, no markdown.
+ 
+{{
+  "findings": "Combined narrative covering all {len(per_image_results)} images...",
+  "abnormality": "...",
+  "risk": 0,
+  "risk_factors": {{
+    {risk_key_hint}
+  }},
+  "bboxes": [],
+  "recommendation": {{
+    "approach": "...",
+    "treatment": "..."
+  }}
+}}
+"""
