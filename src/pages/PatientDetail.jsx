@@ -480,41 +480,22 @@ export default function PatientDetail() {
                     </h3>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                    <div>
-                      <label className="block mb-2 font-black text-slate-700 text-sm uppercase tracking-wider flex items-center gap-2">
-                        <FileText size={16} className="text-sky-500" /> Jenis
-                        Pemeriksaan:
-                      </label>
-                      <select
-                        value={analysisType}
-                        onChange={(e) => setAnalysisType(e.target.value)}
-                        className="w-full p-4 border-2 border-slate-200 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all"
-                      >
-                        {CATEGORIES.map((c, i) => (
-                          <option key={i} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block mb-2 font-black text-slate-700 text-sm uppercase tracking-wider flex items-center gap-2">
-                        <AlignLeft size={16} className="text-sky-500" /> Tingkat
-                        Detail Laporan AI:
-                      </label>
-                      <select
-                        value={detailLevel}
-                        onChange={(e) => setDetailLevel(e.target.value)}
-                        className="w-full p-4 border-2 border-slate-200 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all cursor-pointer"
-                      >
-                        <option value="short">Pendek (Ringkas & Cepat)</option>
-                        <option value="medium">
-                          Sedang (Standar Diagnostik)
+                  <div className="mb-8">
+                    <label className="block mb-2 font-black text-slate-700 text-sm uppercase tracking-wider flex items-center gap-2">
+                      <FileText size={16} className="text-sky-500" /> Jenis
+                      Pemeriksaan:
+                    </label>
+                    <select
+                      value={analysisType}
+                      onChange={(e) => setAnalysisType(e.target.value)}
+                      className="w-full p-4 border-2 border-slate-200 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all"
+                    >
+                      {CATEGORIES.map((c, i) => (
+                        <option key={i} value={c}>
+                          {c}
                         </option>
-                        <option value="long">Panjang (Sangat Detail)</option>
-                      </select>
-                    </div>
+                      ))}
+                    </select>
                   </div>
 
                   {/* AREA MULTI-UPLOAD JSX TEMEN LU DIMASUKKAN DI SINI */}
