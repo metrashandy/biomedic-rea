@@ -570,6 +570,7 @@ async def analyze_xray(
                 )
                 slice_path = os.path.join(img_dir, slice_name)
                 pil_slice.save(slice_path, format="JPEG", quality=90)
+                print(f"  [DEBUG] Slice saved: {slice_path}")
 
                 # Base64 untuk AI
                 image_base64 = pil_to_base64_jpeg(pil_slice)

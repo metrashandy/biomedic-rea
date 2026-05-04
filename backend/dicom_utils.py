@@ -38,6 +38,8 @@ def check_pydicom():
 
 
 def normalize_dicom_array(pixel_array: np.ndarray, ds=None) -> np.ndarray:
+    import cv2
+    
     img = pixel_array.copy().astype(float)
 
     slope = float(getattr(ds, 'RescaleSlope', 1)) if ds else 1.0
@@ -49,28 +51,24 @@ def normalize_dicom_array(pixel_array: np.ndarray, ds=None) -> np.ndarray:
     is_ct = modality == 'CT'
 
     if is_ct:
-        # ── MULTI-WINDOW BLEND untuk CT ──────────────────────
-        # Blend 3 window preset → AI bisa lihat semua jenis lesi
-        windows = [
-            (40, 400),   # soft tissue  — massa, organ
-            (75, 175),   # tumor        — neoplasma
-            (40,  80),   # brain        — edema, perdarahan
-        ]
+        print(f"  [DICOM] HU range: min={img.min():.0f}, max={img.max():.0f}")
 
-        channels = []
-        for wc, ww in windows:
-            wmin = wc - ww / 2
-            wmax = wc + ww / 2
-            ch = np.clip(img, wmin, wmax)
-            ch = (ch - wmin) / (wmax - wmin) * 255.0
-            channels.append(ch.astype(np.uint8))
+        # Soft tissue window
+        wc, ww = 40, 400
+        wmin = wc - ww / 2
+        wmax = wc + ww / 2
+        ch = np.clip(img, wmin, wmax)
+        ch = (ch - wmin) / (wmax - wmin) * 255.0
+        result = ch.astype(np.uint8)
 
-        # Stack jadi RGB: R=soft tissue, G=tumor, B=brain
-        multi = np.stack(channels, axis=-1)
-        return multi  # shape: (H, W, 3)
+        # ── CLAHE: boost kontras lokal supaya AI bisa lihat detail ──
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        result = clahe.apply(result)
+
+        print(f"  [DICOM] Output range setelah CLAHE: min={result.min()}, max={result.max()}")
+        return result
 
     else:
-        # Non-CT: tetap min-max biasa
         if ds is not None:
             try:
                 from pydicom.pixel_data_handlers.util import apply_voi_lut
@@ -134,25 +132,13 @@ def normalize_dicom_array_ct(pixel_array: np.ndarray, ds=None,
     return img.astype(np.uint8)
 
 def array_to_pil(arr: np.ndarray) -> Image.Image:
-    """Convert numpy array (grayscale atau RGB) ke PIL Image RGB."""
     if arr.ndim == 2:
-        pil = Image.fromarray(arr, mode='L').convert('RGB')
+        # Grayscale → convert ke RGB (JPEG butuh RGB, tapi tampilannya tetap abu-abu)
+        return Image.fromarray(arr, mode='L').convert('RGB')
     elif arr.ndim == 3 and arr.shape[2] == 3:
-        pil = Image.fromarray(arr, mode='RGB')
-    elif arr.ndim == 3 and arr.shape[2] == 4:
-        pil = Image.fromarray(arr, mode='RGBA').convert('RGB')
-    elif arr.ndim == 3 and arr.shape[0] in (1, 3, 4):
-        # Channel-first format (C, H, W) → transpose ke (H, W, C)
-        arr_t = np.transpose(arr, (1, 2, 0))
-        if arr_t.shape[2] == 1:
-            pil = Image.fromarray(arr_t[:, :, 0], mode='L').convert('RGB')
-        elif arr_t.shape[2] == 3:
-            pil = Image.fromarray(arr_t, mode='RGB')
-        else:
-            pil = Image.fromarray(arr_t[:, :, :3], mode='RGB')
+        return Image.fromarray(arr, mode='RGB')
     else:
-        raise ValueError(f"Unexpected pixel array shape: {arr.shape}")
-    return pil
+        raise ValueError(f"Unexpected shape: {arr.shape}")
 
 
 def select_representative_slices(slices: list, n_slices: int = 5) -> list:
@@ -374,3 +360,26 @@ def pil_to_base64_jpeg(pil_image: Image.Image, quality: int = 90) -> str:
         pil_image = pil_image.convert('RGB')
     pil_image.save(buffered, format="JPEG", quality=quality)
     return base64.b64encode(buffered.getvalue()).decode()
+
+def extract_jpeg_from_dicom(dicom_bytes: bytes) -> Image.Image | None:
+    """
+    Coba extract JPEG yang sudah ada di dalam DICOM (EncapsulatedDocument / JPEG preview).
+    Return PIL Image kalau berhasil, None kalau tidak ada.
+    """
+    check_pydicom()
+    try:
+        ds = pydicom.dcmread(io.BytesIO(dicom_bytes), force=True)
+        
+        # Cek EncapsulatedDocument (PDF/JPEG embedded)
+        if hasattr(ds, 'EncapsulatedDocument'):
+            return Image.open(io.BytesIO(ds.EncapsulatedDocument)).convert('RGB')
+        
+        # Cek IconImageSequence (thumbnail)
+        if hasattr(ds, 'IconImageSequence') and len(ds.IconImageSequence) > 0:
+            icon = ds.IconImageSequence[0]
+            if hasattr(icon, 'PixelData'):
+                return Image.open(io.BytesIO(icon.PixelData)).convert('RGB')
+                
+    except Exception:
+        pass
+    return None

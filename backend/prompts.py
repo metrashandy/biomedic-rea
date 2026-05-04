@@ -433,6 +433,23 @@ FINDINGS RULES
 - Semi-technical language with brief Indonesian explanation for non-medical users
 
 ------------------------
+SCAN TYPE DETECTION
+------------------------
+First identify what level/region this CT slice shows:
+- Brain parenchyma (cortex, white matter, ventricles)
+- Skull base (orbits, sinuses, mastoid, petrous bone)
+- Posterior fossa (cerebellum, brainstem)
+
+Then analyze accordingly. For skull base slices:
+- Check mastoid air cells: symmetric? any opacification or destruction?
+- Check sinuses: clear or opacified?
+- Check orbits: symmetric? any mass or foreign body?
+- Check petrous bone: intact? any lytic lesion?
+- Check soft tissue: symmetric density on both sides?
+
+ASYMMETRY IS THE KEY FINDING — any difference left vs right is suspicious.
+
+------------------------
 ABNORMALITY RULES
 ------------------------
 - List 1-3 most likely conditions based on findings
