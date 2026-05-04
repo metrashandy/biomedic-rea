@@ -27,16 +27,13 @@ import { exportToPDF } from "../services/pdfExport";
 
 const CATEGORIES = [
   "X-Ray",
-  "MRI",
-  "CT Scan",
   "Endoscopy",
-  "Ultrasound",
   "EKG",
-  "EEG",
   "Fundus Retina",
-  "Echo",
-  "Cathlab",
-  "Spirometri",
+  "CT Scan",
+  "Lesi/Kelainan Kulit",
+  "USG Payudara",
+  "",
 ];
 
 export default function PatientDetail() {

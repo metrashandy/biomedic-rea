@@ -91,6 +91,9 @@ from prompts import (
     get_prompt_fundus,
     get_prompt_ct,
     get_prompt_endoscopy,
+    get_prompt_breast_usg,
+    get_prompt_skin_lesion,
+    get_prompt_ecg,
     get_prompt_combine_results,   # ← prompt gabungan baru
 )
 
@@ -223,6 +226,12 @@ def get_single_prompt(analysis_type: str, detail_level: str) -> str:
         return get_prompt_ct(detail_level)
     elif "endoscopy" in tipe_lower:
         return get_prompt_endoscopy(detail_level)
+    elif "usg payudara" in tipe_lower:
+        return get_prompt_breast_usg(detail_level)
+    elif "lesi/kelainan kulit" in tipe_lower:
+        return get_prompt_skin_lesion(detail_level)
+    elif "ekg" in tipe_lower:
+        return get_prompt_ecg(detail_level)
     else:
         return get_prompt_xrays(detail_level)
 
@@ -570,7 +579,6 @@ async def analyze_xray(
                 )
                 slice_path = os.path.join(img_dir, slice_name)
                 pil_slice.save(slice_path, format="JPEG", quality=90)
-                print(f"  [DEBUG] Slice saved: {slice_path}")
 
                 # Base64 untuk AI
                 image_base64 = pil_to_base64_jpeg(pil_slice)

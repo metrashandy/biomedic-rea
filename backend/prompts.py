@@ -997,3 +997,516 @@ Return ONLY valid JSON. No explanation, no markdown.
   }}
 }}
 """
+
+def get_prompt_breast_usg(detail_level):
+    return f"""
+Analyze this breast ultrasound (USG mammae) image.
+
+Focus ONLY on breast tissue structures.
+
+Do NOT analyze:
+- image artifacts (noise, probe shadow)
+- annotations or labels
+- image borders
+
+------------------------
+DETAIL LEVEL CONTROL
+------------------------
+The output detail level is: {detail_level}
+
+Rules:
+
+IF detail_level == "short":
+- Findings: 2 sentences
+- Abnormality: 3 diseases
+- Recommendation: 1 sentence per section
+
+IF detail_level == "medium":
+- Findings: 6 sentences
+- Abnormality: 3 diseases
+- Recommendation: 3 sentences per section
+
+IF detail_level == "long":
+- Findings: 10 sentences
+- Abnormality: 3 diseases
+- Recommendation: 5 sentences per section
+- Add more explanation and reasoning
+
+------------------------
+TASK
+------------------------
+1. Identify visible breast abnormalities
+2. Describe findings in professional radiology (ultrasound) style
+3. Estimate risk level
+4. Suggest most likely diagnosis (NOT definitive)
+5. Provide clinical recommendation
+
+------------------------
+FINDINGS RULES
+------------------------
+- Write in detailed breast ultrasound narrative style
+- Must follow the selected detail level
+- Must read like a professional radiology report
+- Use flowing sentences (NOT bullet points)
+
+Include:
+- location (left/right breast, quadrant if possible)
+- lesion type (mass, cyst, solid lesion, calcification, ductal dilation)
+- shape (round, oval, irregular)
+- margin (well-defined, ill-defined, spiculated)
+- echogenicity (hypoechoic, hyperechoic, anechoic, heterogeneous)
+- posterior features (enhancement, shadowing, none)
+- vascularity (if suspected from pattern)
+- distribution (localized, multiple, diffuse)
+- severity (mild, moderate, suspicious)
+
+Style:
+- Use semi-technical language (medical + simple explanation)
+- Avoid overly complex jargon
+- Make it understandable for non-medical users
+
+Normal case:
+- Clearly state no suspicious lesion identified
+- Mention homogeneous parenchyma if appropriate
+- Avoid uncertainty language
+
+------------------------
+ABNORMALITY RULES
+------------------------
+- MUST follow selected detail level (jumlah penyakit)
+- MUST list 1–3 most likely conditions
+- Use numbered format:
+
+Example:
+1. Fibroadenoma (benjolan jinak pada payudara)
+→ Jelaskan dengan bahasa sederhana
+
+2. Breast cyst (kista berisi cairan)
+→ Jelaskan dengan bahasa sederhana
+
+3. Breast carcinoma (kanker payudara)
+→ Jelaskan dengan bahasa sederhana
+
+Requirements:
+- Each disease MUST include:
+- medical name
+- simple explanation (Bahasa Indonesia)
+- Avoid unexplained medical terms
+
+If normal:
+"Tidak ditemukan kelainan signifikan pada jaringan payudara"
+
+------------------------
+BOUNDING BOX RULES
+------------------------
+- Detect ALL suspicious regions
+- Maximum 5 boxes
+- Tight and minimal
+- Focus only on abnormal areas
+- Coordinates normalized (0–1)
+- If normal: return []
+
+------------------------
+RISK ESTIMATION
+------------------------
+- Range: 0–100
+- Based on:
+- lesion shape (irregular lebih tinggi risiko)
+- margin (spiculated / ill-defined → lebih tinggi)
+- echogenicity (heterogeneous / hypoechoic solid → lebih tinggi)
+- posterior shadowing (meningkatkan risiko keganasan)
+- number of lesions
+
+- Provide explainable reasoning
+
+------------------------
+RECOMMENDATION RULES
+------------------------
+- Write in professional, doctor-oriented clinical language
+- Use concise, structured, and medically appropriate terminology
+- The output is intended for healthcare professionals, NOT patients
+
+Structure:
+- Use 2 parts:
+1. Approach (clinical assessment & next steps)
+2. Treatment (management plan)
+
+Approach:
+- Include clinical reasoning
+- Suggest:
+- BI-RADS consideration (if applicable)
+- correlation with clinical exam
+- need for further imaging (mammography, MRI)
+- biopsy if suspicious
+
+Treatment:
+- Focus on medical management
+- Can include:
+- follow-up imaging
+- FNAB / core biopsy
+- surgical referral if needed
+
+Style:
+- Use formal and clinical tone
+- Do NOT simplify for layman
+- Be direct, precise, and professional
+
+Tone:
+- Objective, clinical, and evidence-oriented
+- Avoid conversational language
+
+Risk-based behavior:
+
+LOW RISK:
+- Suggest routine follow-up imaging
+
+MEDIUM RISK:
+- Suggest closer monitoring or additional imaging
+
+HIGH RISK:
+- Suggest biopsy or urgent specialist referral
+
+------------------------
+OUTPUT FORMAT
+------------------------
+Return ONLY valid JSON. No explanation, no markdown.
+
+{{
+"findings": "...",
+"abnormality": "...",
+"risk": 0-100,
+"risk_factors": {{
+    "lesion_character": "...",
+    "margin": "...",
+    "echogenicity": "...",
+    "calculation": "..."
+}},
+"bboxes": [
+    {{"x": 0-1, "y": 0-1, "width": 0-1, "height": 0-1}}
+],
+"recommendation": {{
+    "approach": "...",
+    "treatment": "..."
+}}
+}}
+"""
+
+def get_prompt_skin_lesion(detail_level):
+    return f"""
+Analyze this skin lesion image.
+
+Focus ONLY on visible skin lesion.
+
+Do NOT analyze:
+- background skin outside lesion
+- image artifacts (lighting, blur)
+- labels or markings
+
+------------------------
+DETAIL LEVEL CONTROL
+------------------------
+The output detail level is: {detail_level}
+
+Rules:
+
+IF detail_level == "short":
+- Findings: 2 sentences
+- Abnormality: 2 diseases
+- Recommendation: 1 sentence per section
+
+IF detail_level == "medium":
+- Findings: 5 sentences
+- Abnormality: 3 diseases
+- Recommendation: 2 sentences per section
+
+IF detail_level == "long":
+- Findings: 8–10 sentences
+- Abnormality: 3 diseases
+- Recommendation: 3–4 sentences per section
+- Include deeper visual reasoning
+
+------------------------
+TASK
+------------------------
+1. Identify visible abnormalities on the skin lesion
+2. Describe findings in dermatology-style narrative
+3. Estimate risk level
+4. Suggest most likely disease(s) (NOT definitive diagnosis)
+5. Provide clinical recommendation
+
+------------------------
+FINDINGS RULES
+------------------------
+- Write in dermatology narrative style
+- Must follow selected detail level
+- Use flowing sentences (NOT bullet points)
+
+Include:
+- lesion location (centered / localized area)
+- color (brown, black, red, mixed, uneven)
+- shape (round, oval, irregular)
+- border (well-defined, irregular, blurred)
+- symmetry (symmetrical vs asymmetrical)
+- texture (smooth, crusted, ulcerated, raised)
+- size estimation (small, medium, large)
+- distribution (single lesion / multiple)
+- severity (mild, moderate, suspicious)
+
+Style:
+- Semi-technical language (medical + simple explanation)
+- Avoid overly complex jargon
+- Still understandable
+
+Normal case:
+- Clearly state lesion appears benign
+- Mention symmetry and regular borders
+- Avoid uncertainty language
+
+------------------------
+ABNORMALITY RULES
+------------------------
+- MUST list 1–3 most likely diseases
+- Use numbered format:
+
+Example:
+1. Melanoma (kanker kulit berbahaya)
+→ Jelaskan secara sederhana
+
+2. Nevus (tahi lalat jinak)
+→ Jelaskan secara sederhana
+
+3. Basal Cell Carcinoma (kanker kulit tipe ringan)
+→ Jelaskan secara sederhana
+
+Requirements:
+- Include medical name + penjelasan Bahasa Indonesia
+- Hindari istilah tanpa penjelasan
+
+If normal:
+"Tidak ditemukan kelainan kulit yang mencurigakan"
+
+------------------------
+BOUNDING BOX RULES
+------------------------
+- Detect ALL suspicious lesions
+- Maximum 3 boxes
+- Tight and minimal
+- Focus only on lesion area
+- Coordinates normalized (0–1)
+- If normal: return []
+
+------------------------
+RISK ESTIMATION
+------------------------
+- Range: 0–100
+- Based on:
+- asymmetry (tidak simetris → lebih berisiko)
+- border irregularity
+- color variation (multi-color → lebih tinggi)
+- lesion size
+- texture abnormality (ulcer / crust)
+
+- Provide reasoning explanation
+
+------------------------
+RECOMMENDATION RULES
+------------------------
+- Write in doctor-oriented clinical style
+- NOT for patients
+- Use concise medical explanation
+
+Structure:
+1. Approach (penilaian klinis & langkah lanjut)
+2. Treatment (opsi penanganan)
+
+Approach:
+- Evaluasi klinis dermatoskopi jika perlu
+- Pertimbangkan biopsy jika mencurigakan
+- Follow-up jika low risk
+
+Treatment:
+- Observasi untuk lesi jinak
+- Eksisi / biopsy untuk lesi mencurigakan
+- Rujukan ke dermatolog
+
+Tone:
+- Profesional, klinis, tidak santai
+
+Risk-based behavior:
+
+LOW RISK:
+- Monitoring rutin
+
+MEDIUM RISK:
+- Evaluasi lanjutan / dermatoscopy
+
+HIGH RISK:
+- Biopsy atau rujukan segera
+
+------------------------
+OUTPUT FORMAT
+------------------------
+Return ONLY valid JSON. No explanation, no markdown.
+
+{{
+"findings": "...",
+"abnormality": "...",
+"risk": 0-100,
+"risk_factors": {{
+    "symmetry": "...",
+    "border": "...",
+    "color": "...",
+    "calculation": "..."
+}},
+"bboxes": [
+    {{"x": 0-1, "y": 0-1, "width": 0-1, "height": 0-1}}
+],
+"recommendation": {{
+    "approach": "...",
+    "treatment": "..."
+}}
+}}
+"""
+
+def get_prompt_ecg(detail_level):
+    return f"""
+Analyze this ECG (Electrocardiogram) image.
+
+Focus ONLY on waveform patterns.
+
+Do NOT analyze:
+- background grid aesthetics
+- text labels unless related to waveform
+- image borders or artifacts
+
+------------------------
+DETAIL LEVEL CONTROL
+------------------------
+The output detail level is: {detail_level}
+
+Rules:
+
+IF detail_level == "short":
+- Findings: 2 sentences
+- Abnormality: 2 conditions
+- Recommendation: 1 sentence per section
+
+IF detail_level == "medium":
+- Findings: 5 sentences
+- Abnormality: 3 conditions
+- Recommendation: 2 sentences per section
+
+IF detail_level == "long":
+- Findings: 8–10 sentences
+- Abnormality: 3 conditions
+- Recommendation: 3–4 sentences per section
+- Include rhythm reasoning
+
+------------------------
+TASK
+------------------------
+1. Identify waveform abnormalities
+2. Describe findings in cardiology-style narrative
+3. Estimate risk level
+4. Suggest most likely condition(s) (NOT definitive)
+5. Provide clinical recommendation
+
+------------------------
+FINDINGS RULES
+------------------------
+- Write in cardiology narrative style
+- Use flowing sentences
+
+Include:
+- heart rhythm (regular / irregular)
+- heart rate (slow / normal / fast)
+- P wave presence
+- QRS complex width (normal / widened)
+- ST segment (elevated / depressed / normal)
+- T wave (inverted / normal)
+- pattern consistency
+
+Style:
+- Semi-technical but clear
+- Avoid overly complex jargon
+
+Normal case:
+- Clearly state normal sinus rhythm
+- No abnormalities
+
+------------------------
+ABNORMALITY RULES
+------------------------
+- MUST list 1–3 most likely conditions
+
+Example:
+1. Atrial Fibrillation (irama jantung tidak teratur)
+→ Penjelasan sederhana
+
+2. Tachycardia (denyut jantung cepat)
+→ Penjelasan sederhana
+
+3. Myocardial Infarction (serangan jantung)
+→ Penjelasan sederhana
+
+If normal:
+"Tidak ditemukan kelainan pada pola EKG"
+
+------------------------
+BOUNDING BOX RULES
+------------------------
+- Detect abnormal waveform regions
+- Maximum 3 boxes
+- Focus on waveform anomalies
+- If normal: []
+
+------------------------
+RISK ESTIMATION
+------------------------
+- Range: 0–100
+- Based on:
+- rhythm irregularity
+- ST abnormalities
+- QRS abnormality
+- waveform consistency
+
+------------------------
+RECOMMENDATION RULES
+------------------------
+- Doctor-oriented clinical language
+
+Structure:
+1. Approach
+2. Treatment
+
+Approach:
+- Suggest ECG confirmation
+- Consider clinical symptoms
+
+Treatment:
+- Monitoring / medication / referral
+
+------------------------
+OUTPUT FORMAT
+------------------------
+Return ONLY valid JSON.
+
+{{
+"findings": "...",
+"abnormality": "...",
+"risk": 0-100,
+"risk_factors": {{
+    "rhythm": "...",
+    "qrs": "...",
+    "st_segment": "...",
+    "calculation": "..."
+}},
+"bboxes": [
+    {{"x": 0-1, "y": 0-1, "width": 0-1, "height": 0-1}}
+],
+"recommendation": {{
+    "approach": "...",
+    "treatment": "..."
+}}
+}}
+"""
