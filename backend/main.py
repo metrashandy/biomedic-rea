@@ -25,6 +25,12 @@ import json
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
+from dicom_utils import (
+    is_dicom_file,
+    dicom_to_pil_slices,
+    pil_to_base64_jpeg,
+    DicomNotSupportedError,
+)
 
 
 models.Base.metadata.create_all(bind=engine)
@@ -220,15 +226,199 @@ def get_single_prompt(analysis_type: str, detail_level: str) -> str:
     else:
         return get_prompt_xrays(detail_level)
 
+def extract_json_robust(text: str) -> dict:
+    """
+    Parse JSON dari response AI dengan multiple fallback strategy.
+    """
+    # 1. Bersihkan markdown code block
+    text = re.sub(r"```json\s*", "", text)
+    text = re.sub(r"```\s*", "", text)
+    text = text.strip()
+ 
+    # 2. Coba parse langsung
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        print(f"  [JSON] Parse langsung gagal: {e}")
+ 
+    # 3. Cari blok { ... } terluar
+    # Gunakan pendekatan bracket counting bukan regex greedy
+    start = text.find('{')
+    if start == -1:
+        print("  [JSON] Tidak ada { ditemukan")
+        return _empty_result()
+ 
+    # Counting bracket untuk cari penutup yang benar
+    depth = 0
+    end = -1
+    in_string = False
+    escape_next = False
+    for i, ch in enumerate(text[start:], start):
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == '\\' and in_string:
+            escape_next = True
+            continue
+        if ch == '"' and not escape_next:
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
+ 
+    if end == -1:
+        # JSON tidak complete (terpotong) — coba tutup manual
+        print(f"  [JSON] JSON terpotong, mencoba auto-close...")
+        candidate = text[start:]
+        candidate = _try_close_json(candidate)
+    else:
+        candidate = text[start:end]
+ 
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError as e:
+        print(f"  [JSON] Parse candidate gagal: {e}")
+ 
+    # 4. Fix JSON rusak: trailing comma, dll
+    try:
+        fixed = re.sub(r',\s*([}\]])', r'\1', candidate)
+        # Escape newline di dalam string values
+        fixed = _fix_unescaped_newlines(fixed)
+        return json.loads(fixed)
+    except Exception as e:
+        print(f"  [JSON] Fix attempt gagal: {e}")
+ 
+    # 5. Field extraction manual
+    print(f"  [JSON] Fallback ke field extraction")
+    return _extract_fields_manual(text)
+ 
+ 
+def _try_close_json(partial: str) -> str:
+    """
+    Coba tutup JSON yang terpotong dengan menambah bracket/brace yang kurang.
+    """
+    # Hitung bracket yang belum ditutup
+    depth_brace = 0
+    depth_bracket = 0
+    in_string = False
+    escape_next = False
+ 
+    for ch in partial:
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == '\\' and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == '{': depth_brace += 1
+        elif ch == '}': depth_brace -= 1
+        elif ch == '[': depth_bracket += 1
+        elif ch == ']': depth_bracket -= 1
+ 
+    # Kalau masih ada string yang terbuka, tutup dulu
+    if in_string:
+        partial += '"'
+ 
+    # Tutup array dan object yang terbuka
+    partial = partial.rstrip().rstrip(',')
+    partial += ']' * max(0, depth_bracket)
+    partial += '}' * max(0, depth_brace)
+ 
+    return partial
+ 
+ 
+def _fix_unescaped_newlines(text: str) -> str:
+    """
+    Fix newline tidak ter-escape di dalam JSON string values.
+    Ini penyebab utama 'Expecting , delimiter' error.
+    """
+    result = []
+    in_string = False
+    escape_next = False
+ 
+    for ch in text:
+        if escape_next:
+            escape_next = False
+            result.append(ch)
+            continue
+        if ch == '\\' and in_string:
+            escape_next = True
+            result.append(ch)
+            continue
+        if ch == '"':
+            in_string = not in_string
+            result.append(ch)
+            continue
+        # Kalau di dalam string dan ketemu newline/tab literal → escape
+        if in_string and ch == '\n':
+            result.append('\\n')
+            continue
+        if in_string and ch == '\r':
+            result.append('\\r')
+            continue
+        if in_string and ch == '\t':
+            result.append('\\t')
+            continue
+        result.append(ch)
+ 
+    return ''.join(result)
+ 
+ 
+def _extract_fields_manual(text: str) -> dict:
+    """Last resort: extract field-field penting dengan regex."""
+    result = _empty_result()
+ 
+    patterns = {
+        "findings": r'"findings"\s*:\s*"((?:[^"\\]|\\.)*)"',
+        "abnormality": r'"abnormality"\s*:\s*"((?:[^"\\]|\\.)*)"',
+    }
+    for field, pattern in patterns.items():
+        m = re.search(pattern, text, re.DOTALL)
+        if m:
+            result[field] = m.group(1)
+ 
+    risk_m = re.search(r'"risk"\s*:\s*(\d+)', text)
+    if risk_m:
+        result["risk"] = int(risk_m.group(1))
+ 
+    approach_m = re.search(r'"approach"\s*:\s*"((?:[^"\\]|\\.)*)"', text, re.DOTALL)
+    if approach_m:
+        result["recommendation"]["approach"] = approach_m.group(1)
+ 
+    treatment_m = re.search(r'"treatment"\s*:\s*"((?:[^"\\]|\\.)*)"', text, re.DOTALL)
+    if treatment_m:
+        result["recommendation"]["treatment"] = treatment_m.group(1)
+ 
+    return result
+ 
+ 
+def _empty_result() -> dict:
+    return {
+        "findings": "Gagal memproses respons AI.",
+        "abnormality": "-",
+        "risk": 0,
+        "risk_factors": {"area": "-", "region_count": "-", "intensity": "-", "calculation": "-"},
+        "bboxes": [],
+        "recommendation": {"approach": "-", "treatment": "-"}
+    }
 
 # ================== HELPER: PANGGIL AI UNTUK 1 GAMBAR ==================
 def call_ai_single(prompt: str, image_base64: str, mime_type: str) -> dict:
-    """
-    Panggil OpenAI untuk 1 gambar, return dict hasil JSON.
-    Raise Exception jika gagal.
-    """
     response = client.responses.create(
         model="gpt-4o-mini",
+        max_output_tokens=4096,   # ← NAIK dari 1000 ke 4096
         input=[{
             "role": "user",
             "content": [
@@ -239,15 +429,19 @@ def call_ai_single(prompt: str, image_base64: str, mime_type: str) -> dict:
         temperature=0.3
     )
     content_text = response.output[0].content[0].text
-    content_text = re.sub(r"```json|```", "", content_text).strip()
-    result = json.loads(content_text)
-    if "risk_factors" not in result:
-        result["risk_factors"] = {
-            "area": "-", "region_count": "-",
-            "intensity": "-", "calculation": "Tidak tersedia"
-        }
+ 
+    # Print lebih panjang untuk debug
+    print(f"  [AI RAW len={len(content_text)}] {content_text[:500]}")
+ 
+    result = extract_json_robust(content_text)
+ 
+    result.setdefault("risk_factors", {"area": "-", "region_count": "-", "intensity": "-", "calculation": "Tidak tersedia"})
+    result.setdefault("findings", "-")
+    result.setdefault("abnormality", "-")
+    result.setdefault("risk", 0)
+    result.setdefault("bboxes", [])
+    result.setdefault("recommendation", {"approach": "-", "treatment": "-"})
     return result
-
 
 # ================== HELPER: GABUNGKAN HASIL MULTI-GAMBAR ==================
 def call_ai_combine(
@@ -256,31 +450,29 @@ def call_ai_combine(
     detail_level: str,
     symptoms_en: str = None
 ) -> dict:
-    """
-    Panggil AI untuk menggabungkan hasil per-gambar menjadi 1 laporan.
-    """
     prompt = get_prompt_combine_results(detail_level, analysis_type, per_image_results)
     if symptoms_en:
         prompt += f"\nPatient symptoms (for context): {symptoms_en}\n"
-
+ 
     response = client.responses.create(
         model="gpt-4o-mini",
         input=[{
             "role": "user",
-            "content": [
-                {"type": "input_text", "text": prompt}
-            ]
+            "content": [{"type": "input_text", "text": prompt}]
         }],
         temperature=0.3
     )
     content_text = response.output[0].content[0].text
-    content_text = re.sub(r"```json|```", "", content_text).strip()
-    combined = json.loads(content_text)
-    if "risk_factors" not in combined:
-        combined["risk_factors"] = {
-            "area": "-", "region_count": "-",
-            "intensity": "-", "calculation": "Tidak tersedia"
-        }
+    print(f"  [COMBINE AI RAW] {content_text[:300]}")
+ 
+    combined = extract_json_robust(content_text)
+ 
+    combined.setdefault("risk_factors", {"area": "-", "region_count": "-", "intensity": "-", "calculation": "Tidak tersedia"})
+    combined.setdefault("findings", "-")
+    combined.setdefault("abnormality", "-")
+    combined.setdefault("risk", 0)
+    combined.setdefault("bboxes", [])
+    combined.setdefault("recommendation", {"approach": "-", "treatment": "-"})
     return combined
 
 
@@ -303,10 +495,24 @@ async def analyze_xray(
     if len(images) > 10:
         raise HTTPException(status_code=400, detail="Maksimal 10 gambar per sesi")
 
+    # ── Validasi tipe file ─────────────────────────────────
+    # Untuk CT Scan: boleh upload .dcm / .dicom
+    # Untuk modality lain: harus JPG atau PNG
+    is_ct = "ct" in analysis_type.lower().strip()
     allowed_types = ["image/jpeg", "image/png"]
+
     for img in images:
-        if img.content_type not in allowed_types:
-            raise HTTPException(status_code=400, detail=f"File {img.filename} harus JPG atau PNG")
+        is_dcm = is_dicom_file(img.filename, img.content_type or "")
+        if is_dcm and not is_ct:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File DICOM hanya diizinkan untuk CT Scan. File: {img.filename}"
+            )
+        if not is_dcm and img.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File {img.filename} harus JPG, PNG, atau DCM (khusus CT Scan)"
+            )
 
     # ── Info pasien & folder ────────────────────────────────
     no_rm, nama_pasien = get_patient_info_from_db(db, id_pasien)
@@ -321,35 +527,100 @@ async def analyze_xray(
         symptoms_en = translate_to_english(symptoms)
 
     # ── Baca semua gambar ke memori & simpan original ───────
+    # Kalau DICOM → extract slice representatif dulu, tiap slice jadi 1 entry
     images_data = []
+    urutan_counter = 1  # counter global urutan (naik terus meski DICOM expand jadi banyak slice)
 
-    for urutan, image_file in enumerate(images, start=1):
+    for image_file in images:
         contents = await image_file.read()
-        if len(contents) > 100 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail=f"File {image_file.filename} melebihi 100MB")
+        if len(contents) > 200 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail=f"File {image_file.filename} melebihi 200MB")
 
         file_ext = image_file.filename.split(".")[-1].lower()
+        is_dcm = is_dicom_file(image_file.filename, image_file.content_type or "")
 
-        # Simpan original
-        file_name_original = build_filename_multi(no_rm, nama_pasien, jenis_bersih, seq, urutan, "original", file_ext)
-        file_path_original = os.path.join(img_dir, file_name_original)
-        with open(file_path_original, "wb") as f:
-            f.write(contents)
+        if is_dcm:
+            # ── DICOM: ekstrak slice representatif ──────────
+            print(f"🔍 Memproses DICOM: {image_file.filename}")
+            try:
+                pil_slices = dicom_to_pil_slices(
+                    dicom_bytes=contents,
+                    filename=image_file.filename,
+                    n_slices=5  # ambil 5 slice representatif per file DICOM
+                )
+            except DicomNotSupportedError as e:
+                raise HTTPException(status_code=500, detail=str(e))
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
 
-        # Konversi ke base64 untuk AI
-        pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
-        buffered = io.BytesIO()
-        pil_image.save(buffered, format="JPEG")
-        image_base64 = base64.b64encode(buffered.getvalue()).decode()
+            print(f"✅ DICOM '{image_file.filename}': {len(pil_slices)} slice diekstrak")
 
-        images_data.append({
-            "urutan": urutan,
-            "pil_image": pil_image,
-            "image_base64": image_base64,
-            "mime_type": "image/jpeg",
-            "path_original": file_path_original,
-            "file_ext": file_ext,
-        })
+            # Simpan original DICOM sekali
+            dcm_name = build_filename_multi(no_rm, nama_pasien, jenis_bersih, seq, urutan_counter, "original", "dcm")
+            dcm_path = os.path.join(img_dir, dcm_name)
+            with open(dcm_path, "wb") as f:
+                f.write(contents)
+
+            # Setiap slice jadi 1 entry images_data
+            for slice_idx, pil_slice in enumerate(pil_slices, start=1):
+                # Simpan slice sebagai JPG
+                slice_name = build_filename_multi(
+                    no_rm, nama_pasien, jenis_bersih, seq,
+                    urutan_counter, f"slice{slice_idx}", "jpg"
+                )
+                slice_path = os.path.join(img_dir, slice_name)
+                pil_slice.save(slice_path, format="JPEG", quality=90)
+
+                # Base64 untuk AI
+                image_base64 = pil_to_base64_jpeg(pil_slice)
+
+                images_data.append({
+                    "urutan": urutan_counter,
+                    "slice_idx": slice_idx,
+                    "pil_image": pil_slice,
+                    "image_base64": image_base64,
+                    "mime_type": "image/jpeg",
+                    "path_original": slice_path,   # tampilkan slice JPG di frontend
+                    "path_dicom": dcm_path,         # path DICOM asli untuk arsip
+                    "file_ext": "jpg",
+                    "from_dicom": True,
+                })
+                urutan_counter += 1
+
+        else:
+            # ── JPG/PNG biasa ────────────────────────────────
+            file_name_original = build_filename_multi(no_rm, nama_pasien, jenis_bersih, seq, urutan_counter, "original", file_ext)
+            file_path_original = os.path.join(img_dir, file_name_original)
+            with open(file_path_original, "wb") as f:
+                f.write(contents)
+
+            pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
+            buffered = io.BytesIO()
+            pil_image.save(buffered, format="JPEG")
+            image_base64 = base64.b64encode(buffered.getvalue()).decode()
+
+            images_data.append({
+                "urutan": urutan_counter,
+                "slice_idx": None,
+                "pil_image": pil_image,
+                "image_base64": image_base64,
+                "mime_type": "image/jpeg",
+                "path_original": file_path_original,
+                "path_dicom": None,
+                "file_ext": file_ext,
+                "from_dicom": False,
+            })
+            urutan_counter += 1
+
+    # Cek total setelah DICOM expand
+    if len(images_data) > 15:
+        # Terlalu banyak slice, batasi ke 10 slice paling representatif
+        print(f"⚠️ Total {len(images_data)} slice setelah expand DICOM, dibatasi ke 10")
+        step = len(images_data) // 10
+        images_data = images_data[::step][:10]
+        # Re-assign urutan
+        for i, d in enumerate(images_data, start=1):
+            d["urutan"] = i
 
     # ── Analisis AI: setiap gambar pakai prompt SINGLE ──────
     # Strategi: analisis per-gambar → hasilnya akurat per gambar

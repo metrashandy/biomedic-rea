@@ -378,179 +378,102 @@ Return ONLY valid JSON. No explanation, no markdown.
 
 def get_prompt_ct(detail_level):
     return f"""
-Analyze this non-contrast brain CT scan.
+You are an expert neuroradiologist. Analyze this brain CT scan image.
 
-Focus ONLY on intracranial structures.
+IMPORTANT — IMAGE ENCODING:
+This image is rendered using multi-window blending (RGB channels):
+- Red channel = soft tissue window (C=40, W=400) → best for masses, tumors, organs
+- Green channel = tumor window (C=75, W=175) → best for neoplasms, ring-enhancing lesions
+- Blue channel = brain window (C=40, W=80) → best for edema, hemorrhage
 
-Do NOT analyze:
-- skull fractures (unless clearly related to intracranial pathology)
-- external artifacts
-- non-brain regions
+Use ALL three color channels to identify pathology. Do not rely on grayscale appearance alone.
+
+------------------------
+CRITICAL CHECKLIST — check each before concluding "normal"
+------------------------
+1. Hemisphere symmetry: Is the left side IDENTICAL to the right? Any density difference?
+2. Mass lesion: Any hyperdense or hypodense focal area that does NOT match normal anatomy?
+3. Ring-enhancing pattern: Any area with bright rim and dark center?
+4. Midline shift: Is the falx cerebri centered? Any shift > 1mm?
+5. Ventricular asymmetry: Are both lateral ventricles equal size?
+6. Perilesional edema: Any low-density halo surrounding a denser structure?
+7. Sulcal effacement: Are the cortical sulci symmetric or is one side flattened?
+8. Basal cisterns: Are they open and symmetric?
+
+If ALL 8 checks are normal → state "no acute intracranial abnormality".
+If ANY check is abnormal → describe it in findings, name it in abnormality.
 
 ------------------------
 DETAIL LEVEL CONTROL
 ------------------------
 The output detail level is: {detail_level}
 
-Rules:
-
 IF detail_level == "short":
-- Findings: 2 sentences
-- Abnormality: 3 diseases
+- Findings: 3 sentences (cover checklist results briefly)
+- Abnormality: up to 3 conditions
 - Recommendation: 1 sentence per section
 
 IF detail_level == "medium":
-- Findings: 6 sentences
-- Abnormality: 3 diseases
+- Findings: 6-8 sentences
+- Abnormality: up to 3 conditions
 - Recommendation: 3 sentences per section
 
 IF detail_level == "long":
-- Findings: 10 sentences
-- Abnormality: 3 diseases
+- Findings: 10-12 sentences
+- Abnormality: up to 3 conditions
 - Recommendation: 5 sentences per section
-- Add more explanation and reasoning
-
-------------------------
-TASK
-------------------------
-1. Identify visible intracranial abnormalities
-2. Describe findings in detailed radiology narrative
-3. Estimate risk level
-4. Suggest most likely diagnosis (NOT definitive)
-5. Provide clinical recommendation
 
 ------------------------
 FINDINGS RULES
 ------------------------
-- Write in detailed neuroradiology narrative style
-- Must follow the selected detail level
-- Must read like a professional CT scan report
-- Use flowing sentences (NOT bullet points)
-
-Include:
-- location (lobar region: frontal, parietal, temporal, occipital, cerebellum, brainstem)
-- side (left/right/bilateral)
-- density (hyperdense, hypodense, isodense)
-- pattern (focal, diffuse, mass effect)
-- severity (mild, moderate, severe)
-
-Also mention if present:
-- midline shift
-- ventricular compression or dilation
-- edema
-- hemorrhage patterns
-
-Style:
-- Use semi-technical language
-- Explain complex terms briefly
-- Keep understandable for non-medical users
-
-Normal case:
-- Clearly state no acute intracranial abnormality
-- Mention:
-- no hemorrhage
-- no mass effect
-- no midline shift
+- Systematically go through: frontal → parietal → temporal → occipital → cerebellum → brainstem → ventricles → midline
+- Describe each region: density (hyperdense/hypodense/isodense), morphology, borders
+- Explicitly state presence or absence of: hemorrhage, mass, edema, shift, herniation
+- Use flowing radiology narrative, NOT bullet points
+- Semi-technical language with brief Indonesian explanation for non-medical users
 
 ------------------------
 ABNORMALITY RULES
 ------------------------
-- MUST follow selected detail level (jumlah kondisi)
-- MUST list 1–3 most likely conditions
-- Use numbered format:
+- List 1-3 most likely conditions based on findings
+- Format:
 
-Example:
-1. Intracerebral Hemorrhage (perdarahan di dalam otak)
-→ Jelaskan secara sederhana
+1. Glioblastoma Multiforme (tumor ganas di otak)
+→ Penjelasan singkat bahasa Indonesia
 
-2. Ischemic Stroke (stroke akibat sumbatan pembuluh darah)
-→ Jelaskan secara sederhana
+2. Meningioma (tumor di selaput otak, biasanya jinak)
+→ Penjelasan singkat
 
-3. Brain Edema (pembengkakan jaringan otak)
-→ Jelaskan secara sederhana
-
-Requirements:
-- Include medical name + simple explanation (Bahasa Indonesia)
-- Avoid unexplained jargon
-
-If normal:
-"Tidak ditemukan kelainan intrakranial yang signifikan"
+- If truly normal: "Tidak ditemukan kelainan intrakranial yang signifikan"
+- NEVER default to normal if any asymmetry was detected
 
 ------------------------
 BOUNDING BOX RULES
 ------------------------
-- Detect ALL suspicious regions
+- Draw boxes around ALL suspicious regions
 - Maximum 5 boxes
-- Tight and minimal
-- Focus on abnormal areas only
-- Coordinates normalized (0–1)
-- If normal: return []
+- Tight, minimal — only cover the abnormal area
+- Normalized coordinates 0.0–1.0
+- If truly normal: return []
 
 ------------------------
 RISK ESTIMATION
 ------------------------
-- Range: 0–100
-- Based on:
-- size of lesion
-- location (critical area or not)
-- presence of mass effect or midline shift
-- number of abnormalities
-
-- Provide explainable reasoning
+- Range: 0-100
+- Tumor/mass with mass effect → 60-90
+- Hemorrhage → 50-80
+- Subtle asymmetry without clear mass → 20-40
+- Truly normal → 0-15
+- Explain the basis for the score
 
 ------------------------
 RECOMMENDATION RULES
 ------------------------
-- Write in professional, doctor-oriented clinical language
-- Use concise, structured, and medically appropriate terminology
-- The output is intended for healthcare professionals, NOT patients
+For healthcare professionals. Formal clinical tone.
 
-Structure:
-- Use 2 parts:
-1. Approach (clinical assessment & next steps)
-2. Treatment (management plan)
-
-Approach:
-- Include clinical reasoning
-- Suggest:
-- differential diagnosis
-- need for clinical correlation
-- further investigations (lab, imaging, follow-up)
-
-Treatment:
-- Focus on medical management
-- Can include:
-- pharmacological therapy (e.g. antibiotik, antiinflamasi)
-- monitoring plan
-- follow-up imaging
-- referral if needed
-
-Style:
-- Use formal and clinical tone
-- Do NOT simplify for layman
-- Be direct, precise, and professional
-
-
-Tone:
-- Objective, clinical, and evidence-oriented
-- Avoid conversational or reassuring language
-
-Risk-based tone:
-
-LOW RISK:
-- Monitoring
-- No urgent action
-
-MEDIUM RISK:
-- Suggest further imaging / follow-up
-- Explain need for observation
-
-HIGH RISK:
-- Urgent medical attention
-- Explain potential danger clearly
-
-Tone:
-- Informative, calm, not robotic
+Two sections:
+1. Approach: differential diagnosis, clinical correlation, further imaging (MRI with contrast, MRS, perfusion)
+2. Treatment: neurosurgical referral, medical management, monitoring
 
 ------------------------
 OUTPUT FORMAT
@@ -558,22 +481,22 @@ OUTPUT FORMAT
 Return ONLY valid JSON. No explanation, no markdown.
 
 {{
-"findings": "...",
-"abnormality": "...",
-"risk": 0-100,
-"risk_factors": {{
+  "findings": "...",
+  "abnormality": "...",
+  "risk": 0-100,
+  "risk_factors": {{
     "lesion_size": "...",
     "location": "...",
     "mass_effect": "...",
     "calculation": "..."
-}},
-"bboxes": [
-    {{"x": 0-1, "y": 0-1, "width": 0-1, "height": 0-1}}
-],
-"recommendation": {{
+  }},
+  "bboxes": [
+    {{"x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0}}
+  ],
+  "recommendation": {{
     "approach": "...",
     "treatment": "..."
-}}
+  }}
 }}
 """
 
@@ -1016,6 +939,9 @@ SYNTHESIS RULES
 - Note any contradictions or varying findings between images
 - Give ONE overall risk score (weighted average, favor higher risk if any image is high)
 - Give ONE unified recommendation
+- IMPORTANT: If ANY single image flags a mass, tumor, or asymmetry — include it in the combined findings.
+  Do NOT average it away just because other slices appear normal.
+  A tumor visible in 1 out of 4 slices is still a tumor.
  
 Detail level: {detail_level}
 {detail_rules}
