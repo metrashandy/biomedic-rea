@@ -626,7 +626,7 @@ async def analyze_xray(
     # Strategi: analisis per-gambar → hasilnya akurat per gambar
     # Lalu jika multi-gambar → combine dengan 1 call AI lagi
     
-    single_prompt = get_single_prompt(jenis_bersih, detail_level)
+    single_prompt = get_single_prompt(jenis_bersih, "long")
     if symptoms_en:
         single_prompt += f"\nPatient symptoms: {symptoms_en}\n"
 
@@ -1091,6 +1091,74 @@ def reset_analysis(id_analisis: int, db: Session = Depends(get_db)):
         analisis.gambar_hasil = None
         db.commit()
         return {"msg": "Data direset"}
+
+
+@app.get("/api/records/{id_analisis}/export")
+def export_record(id_analisis: int, detail_level: str = "long", db: Session = Depends(get_db)):
+    record = db.query(models.Analisis).filter(
+        models.Analisis.id_analisis == id_analisis
+    ).first()
+
+    if not record:
+        raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+
+    ai_result = json.loads(record.teks_hasil_analisis)
+
+    # 🔥 summarize di sini
+    summarized = summarize_ai_result(ai_result, detail_level)
+
+    return {
+        "data": {
+            "id": record.id_analisis,
+            "date": record.pemeriksaan.tgl_pemeriksaan.strftime("%d-%m-%Y"),
+            "result": summarized,
+            "doctorNotes": json.loads(record.doctor_notes) if record.doctor_notes else {},
+            "gambar_asli_url": get_clean_url(record.gambar_asli),
+        }
+    }
+
+def summarize_text(text: str, level: str) -> str:
+    if not text or level == "long":
+        return text or "-"
+
+    if level == "short":
+        target = "maksimal 2 kalimat"
+    elif level == "medium":
+        target = "sekitar 4–6 kalimat"
+    else:
+        target = "tanpa perubahan"
+
+    prompt = f"""
+    Ringkas teks medis berikut menjadi {target}.
+    - Pertahankan istilah klinis penting
+    - Jangan menambah informasi baru
+    - Bahasa profesional
+
+    Teks:
+    {text}
+    """
+
+    resp = client.responses.create(
+        model="gpt-4o-mini",
+        input=prompt,
+        temperature=0.2
+    )
+
+    return resp.output[0].content[0].text.strip()
+
+def summarize_ai_result(ai_result: dict, level: str) -> dict:
+    if level == "long":
+        return ai_result
+
+    return {
+        **ai_result,
+        "findings": summarize_text(ai_result.get("findings"), level),
+        "abnormality": summarize_text(ai_result.get("abnormality"), level),
+        "recommendation": {
+            "approach": summarize_text(ai_result.get("recommendation", {}).get("approach"), level),
+            "treatment": summarize_text(ai_result.get("recommendation", {}).get("treatment"), level),
+        }
+    }
 
 
 # ================== SEEDING DATA DUMMY ==================
