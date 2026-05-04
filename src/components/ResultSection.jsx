@@ -377,48 +377,6 @@ export default function ResultSection({
           <div>
             <ImageRenderer isFull={false} />
 
-            {/* Toggle bbox */}
-            <div className="mt-4 flex flex-col items-center bg-slate-50 p-4 rounded-2xl border border-slate-200 gap-3">
-              <div className="flex flex-wrap gap-6 justify-center">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showAIBoxes}
-                    onChange={() => setShowAIBoxes(!showAIBoxes)}
-                    className="w-4 h-4 accent-blue-600 cursor-pointer"
-                  />
-                  <div className="w-4 h-4 border-2 border-blue-500 rounded-sm bg-blue-500/10"></div>
-                  <span className="font-bold text-slate-700 text-sm">
-                    Area AI (Abnormal)
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showDoctorBoxes}
-                    onChange={() => setShowDoctorBoxes(!showDoctorBoxes)}
-                    className="w-4 h-4 accent-green-600 cursor-pointer"
-                  />
-                  <div className="w-4 h-4 border-2 border-green-500 rounded-sm bg-green-500/20"></div>
-                  <span className="font-bold text-slate-700 text-sm">
-                    Area Dokter
-                  </span>
-                </label>
-              </div>
-              {doctorBoxes.length > 0 && (
-                <button
-                  onClick={() => setDoctorBoxes([])}
-                  className="text-sm font-bold text-red-500 hover:text-red-700 underline"
-                >
-                  Hapus Semua Anotasi Dokter
-                </button>
-              )}
-              <p className="text-xs text-slate-400 text-center">
-                Klik dan seret pada gambar untuk menambah anotasi dokter (kotak
-                hijau)
-              </p>
-            </div>
-
             {/* Navigasi multi-gambar */}
             {hasMultipleImages && allImages.length > 0 && (
               <div className="mt-4 bg-slate-50 rounded-2xl border border-slate-200 p-4">
@@ -480,10 +438,13 @@ export default function ResultSection({
           </div>
 
           {/* KOLOM KANAN */}
+          {/* KOLOM KANAN */}
           <div className="space-y-4">
             <p className="text-slate-600 mb-4 leading-relaxed">
               {getDynamicDescription()}
             </p>
+
+            {/* 4 kotak analisis */}
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-sky-50 p-4 rounded-xl border border-sky-100">
                 <span className="text-slate-500 text-sm flex items-center gap-1">
@@ -525,6 +486,46 @@ export default function ResultSection({
                   {getAction(risk)}
                 </p>
               </div>
+            </div>
+
+            {/* Legend — di bawah 4 kotak, tanpa checkbox */}
+            {/* Checkbox toggle — fungsional, styling rapi */}
+            <div className="flex items-center gap-6 bg-slate-50 px-4 py-3 rounded-xl border border-slate-200">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Tampilkan:
+              </span>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showAIBoxes}
+                  onChange={() => setShowAIBoxes(!showAIBoxes)}
+                  className="w-4 h-4 accent-blue-600 cursor-pointer"
+                />
+                <div className="w-4 h-4 border-2 border-blue-500 bg-blue-500/10 rounded-sm"></div>
+                <span className="text-sm font-semibold text-slate-700">
+                  Area AI
+                </span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showDoctorBoxes}
+                  onChange={() => setShowDoctorBoxes(!showDoctorBoxes)}
+                  className="w-4 h-4 accent-green-600 cursor-pointer"
+                />
+                <div className="w-4 h-4 border-2 border-green-500 bg-green-500/20 rounded-sm"></div>
+                <span className="text-sm font-semibold text-slate-700">
+                  Area Dokter
+                </span>
+              </label>
+              {doctorBoxes.length > 0 && (
+                <button
+                  onClick={() => setDoctorBoxes([])}
+                  className="ml-auto text-xs font-bold text-red-500 hover:text-red-700"
+                >
+                  Hapus Anotasi
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -625,20 +626,9 @@ export default function ResultSection({
         <DisclaimerCard content="Hasil ini dihasilkan oleh AI dan tidak menggantikan diagnosis medis profesional. Catatan yang ditambahkan oleh dokter akan menjadi rekam medis resmi." />
       </div>
 
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-slate-600">Panjang Laporan:</span>
-        <select
-          value={detailLevel}
-          onChange={(e) => setDetailLevel(e.target.value)}
-          className="border px-3 py-2 rounded-lg"
-        >
-          <option value="short">Pendek</option>
-          <option value="medium">Sedang</option>
-          <option value="long">Panjang</option>
-        </select>
-      </div>
-
       <div className="mt-10 flex flex-wrap justify-center items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+        {/* Selector panjang laporan — menyatu dengan tombol */}
+
         <button
           onClick={onReset}
           className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-3 px-6 rounded-xl transition-colors"
@@ -652,43 +642,28 @@ export default function ResultSection({
           Simpan Catatan Dokter
         </button>
         <button
-          onClick={async () => {
-            try {
-              // 🔥 1. CEK DATA RESULT
-              console.log("RESULT:", result);
-
-              // 🔥 2. AMBIL ID DENGAN AMAN
-              const id = result?.record_id || result?.id || result?.id_analisis;
-
-              console.log("EXPORT ID:", id);
-
-              // 🔥 3. CEK URL YANG DIPANGGIL
-              const url = `http://localhost:8000/api/records/${id}/export?detail_level=${detailLevel}`;
-              console.log("FETCH URL:", url);
-
-              const res = await fetch(url);
-
-              // 🔥 4. LIHAT RESPONSE MENTAH (INI PALING PENTING)
-              const text = await res.text();
-              console.log("RAW RESPONSE:", text);
-
-              // 🔥 5. BARU PARSE JSON
-              const data = JSON.parse(text);
-
-              console.log("PARSED DATA:", data);
-
-              exportToPDF(data.data);
-            } catch (err) {
-              console.error("Export error:", err);
-            }
-            console.log("EXPORT SUCCESS");
-          }}
+          onClick={onExport}
           disabled={exporting}
           className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl shadow-sm transition-colors disabled:opacity-50"
         >
-          <Download size={18} />{" "}
+          <Download size={18} />
           {exporting ? "Menyiapkan PDF..." : "Download Laporan PDF"}
         </button>
+        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-sm">
+          <span className="text-sm font-semibold text-slate-500">
+            📄 Laporan:
+          </span>
+          <select
+            value={detailLevel}
+            onChange={(e) => setDetailLevel(e.target.value)}
+            className="bg-transparent font-bold text-slate-700 outline-none cursor-pointer text-sm pr-2 border-none appearance-none"
+          >
+            <option value="short">⚡ Pendek</option>
+            <option value="medium">📋 Sedang</option>
+            <option value="long">📝 Panjang</option>
+          </select>
+          <span className="text-slate-400 text-xs pointer-events-none">▾</span>
+        </div>
       </div>
     </div>
   );
