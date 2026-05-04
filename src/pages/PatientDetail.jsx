@@ -34,6 +34,7 @@ const CATEGORIES = [
   "Lesi/Kelainan Kulit",
   "USG Payudara",
   "USG Abdominal",
+  "Otoscopic", 
 ];
 
 export default function PatientDetail() {

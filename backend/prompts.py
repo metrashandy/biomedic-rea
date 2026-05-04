@@ -932,6 +932,8 @@ Recommendation Treatment: {r.get('recommendation', {}).get('treatment', '-')}
         risk_key_hint = '"lesion_size": "...", "location": "...", "mass_effect": "...", "calculation": "..."'
     elif "endoscopy" in analysis_type.lower():
         risk_key_hint = '"lesion_count": "...", "distribution": "...", "severity": "...", "calculation": "..."'
+    elif "oto" in analysis_type.lower() or "otoscopic" in analysis_type.lower():
+        risk_key_hint = '"membrane_status": "...", "canal_condition": "...", "signs_of_infection": "...", "calculation": "..."'
     else:
         risk_key_hint = '"area": "...", "region_count": "...", "intensity": "...", "calculation": "..."'
  
@@ -1680,5 +1682,198 @@ Return ONLY valid JSON. No explanation, no markdown.
     "approach": "...",
     "treatment": "..."
 }}
+}}
+"""
+def get_prompt_otoscopic(detail_level):
+    return f"""
+Analyze this otoscopic image of the ear canal and tympanic membrane (eardrum).
+ 
+Focus ONLY on visible ear structures: ear canal, tympanic membrane, and any visible middle ear features.
+ 
+Do NOT analyze:
+- otoscope artifacts (light reflex from instrument is NORMAL — do not flag it as pathology)
+- image vignetting or dark borders
+- cerumen (earwax) unless it obstructs the view significantly
+ 
+------------------------
+DETAIL LEVEL CONTROL
+------------------------
+The output detail level is: {detail_level}
+ 
+Rules:
+ 
+IF detail_level == "short":
+- Findings: 2 sentences
+- Abnormality: 2 conditions
+- Recommendation: 1 sentence per section
+ 
+IF detail_level == "medium":
+- Findings: 5–6 sentences
+- Abnormality: 3 conditions
+- Recommendation: 2–3 sentences per section
+ 
+IF detail_level == "long":
+- Findings: 8–10 sentences
+- Abnormality: 3 conditions
+- Recommendation: 4–5 sentences per section
+- Include detailed structural reasoning
+ 
+------------------------
+TASK
+------------------------
+1. Evaluate tympanic membrane integrity and appearance
+2. Assess ear canal condition
+3. Describe findings in professional otolaryngology narrative
+4. Estimate risk level
+5. Suggest most likely diagnosis (NOT definitive)
+6. Provide clinical recommendation
+ 
+------------------------
+SYSTEMATIC CHECKLIST — evaluate each before concluding "normal"
+------------------------
+1. Tympanic membrane color: normal (pearly gray/white) vs abnormal (red, yellow, blue, opaque)?
+2. Light reflex: present and sharp (normal cone of light) vs absent/distorted?
+3. Tympanic membrane position: neutral vs retracted vs bulging?
+4. Perforation: any hole or defect visible?
+5. Fluid behind eardrum: any amber/dark color suggesting effusion?
+6. Ear canal: clean vs inflamed, swollen, discharge, foreign body?
+7. Landmarks: malleus handle, umbo, pars flaccida visible and normal?
+8. Surface: smooth vs granular, vascular, scarred?
+ 
+If ALL 8 checks are normal → state "normal tympanic membrane appearance".
+If ANY check is abnormal → describe and name it.
+ 
+------------------------
+FINDINGS RULES
+------------------------
+- Write in detailed otolaryngology narrative style
+- Must follow selected detail level
+- Use flowing sentences (NOT bullet points)
+- Must read like a professional ENT examination report
+ 
+Include:
+- tympanic membrane color and transparency
+- membrane position (neutral / retracted / bulging)
+- light reflex status (present, sharp / absent / distorted)
+- visible landmarks (malleus, umbo)
+- ear canal condition (clean, inflamed, discharge)
+- presence/absence of perforation
+- signs of fluid or infection
+ 
+Style:
+- Semi-technical language (medical + simple Indonesian explanation for non-medical users)
+- Avoid overly complex jargon without explanation
+ 
+Normal case:
+- Clearly state tympanic membrane appears normal
+- Mention sharp light reflex and intact membrane
+- Avoid uncertainty language
+ 
+------------------------
+ABNORMALITY RULES
+------------------------
+- MUST list 1–3 most likely conditions based on findings
+- Use numbered format:
+ 
+Example:
+1. Otitis Media Akut (infeksi telinga tengah akut)
+→ Penjelasan sederhana Bahasa Indonesia
+ 
+2. Otitis Media dengan Efusi / Glue Ear (cairan di telinga tengah tanpa infeksi aktif)
+→ Penjelasan sederhana
+ 
+3. Perforasi Membran Timpani (robek pada gendang telinga)
+→ Penjelasan sederhana
+ 
+Other possible conditions to consider:
+- Otitis Externa (infeksi liang telinga)
+- Cholesteatoma (pertumbuhan kulit abnormal di telinga tengah)
+- Tympanosclerosis (jaringan parut pada gendang telinga)
+- Retracted Eardrum (gendang telinga tertarik ke dalam)
+- Hemotympanum (darah di balik gendang telinga)
+ 
+If normal:
+"Tidak ditemukan kelainan signifikan pada membran timpani dan liang telinga"
+ 
+------------------------
+BOUNDING BOX RULES
+------------------------
+- Draw boxes around ALL suspicious / abnormal regions
+- Maximum 5 boxes
+- Prioritize: perforation, bulging area, fluid line, inflammation, foreign body
+- Tight and minimal — cover only the abnormal area
+- Normalized coordinates 0.0–1.0
+- If truly normal: return []
+ 
+Do NOT box:
+- the normal light reflex cone
+- the otoscope lens border/vignette
+- cerumen that is clearly normal/minor
+ 
+------------------------
+RISK ESTIMATION
+------------------------
+- Range: 0–100
+- Low (0–20): Normal or minor cerumen
+- Low-Medium (20–40): Mild retraction, minor canal inflammation
+- Medium (40–60): Otitis media with effusion, mild perforation
+- High (60–80): Acute otitis media with bulging, active discharge
+- Very High (80–100): Cholesteatoma, large perforation, hemotympanum
+ 
+Provide explainable reasoning for the score.
+ 
+------------------------
+RECOMMENDATION RULES
+------------------------
+- Write in professional, doctor-oriented clinical language (ENT / primary care)
+- NOT for patients
+- Concise and structured
+ 
+Structure:
+1. Approach: clinical assessment, audiometry if indicated, further evaluation
+2. Treatment: management plan
+ 
+Approach:
+- Clinical correlation with symptoms (otalgia, hearing loss, discharge, fever)
+- Consider pure tone audiometry / tympanometry
+- Follow-up interval
+ 
+Treatment:
+- Antibiotics if bacterial otitis media suspected
+- Decongestants / nasal spray for Eustachian tube dysfunction
+- Ear drops for otitis externa
+- ENT referral for cholesteatoma, large perforation, or recurrent infections
+- Watchful waiting for otitis media with effusion in children
+ 
+Tone:
+- Professional, objective, clinically precise
+ 
+Risk-based behavior:
+LOW RISK: Reassure, routine follow-up
+MEDIUM RISK: Medical treatment, re-evaluation in 2–4 weeks
+HIGH RISK: Urgent ENT referral, audiological evaluation
+ 
+------------------------
+OUTPUT FORMAT
+------------------------
+Return ONLY valid JSON. No explanation, no markdown.
+ 
+{{
+  "findings": "...",
+  "abnormality": "...",
+  "risk": 0-100,
+  "risk_factors": {{
+    "membrane_status": "...",
+    "canal_condition": "...",
+    "signs_of_infection": "...",
+    "calculation": "..."
+  }},
+  "bboxes": [
+    {{"x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0}}
+  ],
+  "recommendation": {{
+    "approach": "...",
+    "treatment": "..."
+  }}
 }}
 """

@@ -131,6 +131,13 @@ export default function ResultSection({
     ) {
       mod = "citra Oftalmologi";
       kelainan = "eksudat, perdarahan mikro, atau abnormalitas makula";
+    } else if (
+      type.includes("otoscopic") ||
+      type.includes("oto") ||
+      type.includes("telinga")
+    ) {
+      mod = "citra Otoskopik (telinga)";
+      kelainan = "kelainan membran timpani, infeksi, atau perforasi";
     } else {
       mod = `citra ${analysisType}`;
     }

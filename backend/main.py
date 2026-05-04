@@ -95,6 +95,7 @@ from prompts import (
     get_prompt_skin_lesion,
     get_prompt_ecg,
     get_prompt_abdominal_usg,
+    get_prompt_otoscopic, 
     get_prompt_combine_results,   # ← prompt gabungan baru
 )
 
@@ -235,6 +236,8 @@ def get_single_prompt(analysis_type: str, detail_level: str) -> str:
         return get_prompt_ecg(detail_level)
     elif "usg abdominal" in tipe_lower:
         return get_prompt_abdominal_usg(detail_level)
+    elif "otoscopic" in tipe_lower or "telinga" in tipe_lower or "oto" in tipe_lower:
+        return get_prompt_otoscopic(detail_level) 
     else:
         return get_prompt_xrays(detail_level)
 
