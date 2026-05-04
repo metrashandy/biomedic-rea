@@ -33,7 +33,7 @@ const CATEGORIES = [
   "CT Scan",
   "Lesi/Kelainan Kulit",
   "USG Payudara",
-  "",
+  "USG Abdominal",
 ];
 
 export default function PatientDetail() {

@@ -1510,3 +1510,175 @@ Return ONLY valid JSON.
 }}
 }}
 """
+
+def get_prompt_abdominal_usg(detail_level):
+    return f"""
+Analyze this abdominal ultrasound (USG abdomen) image.
+
+Focus ONLY on visible abdominal organ structures.
+
+Do NOT analyze:
+- probe artifacts or noise
+- image borders or annotations
+- unrelated background
+
+------------------------
+DETAIL LEVEL CONTROL
+------------------------
+The output detail level is: {detail_level}
+
+Rules:
+
+IF detail_level == "short":
+- Findings: 2 sentences
+- Abnormality: 2 diseases
+- Recommendation: 1 sentence per section
+
+IF detail_level == "medium":
+- Findings: 5 sentences
+- Abnormality: 3 diseases
+- Recommendation: 2 sentences per section
+
+IF detail_level == "long":
+- Findings: 8–10 sentences
+- Abnormality: 3 diseases
+- Recommendation: 3–4 sentences per section
+- Include deeper clinical reasoning
+
+------------------------
+TASK
+------------------------
+1. Identify visible abnormalities in abdominal organs
+2. Describe findings in radiology ultrasound narrative
+3. Estimate risk level
+4. Suggest most likely diagnosis (NOT definitive)
+5. Provide clinical recommendation
+
+------------------------
+FINDINGS RULES
+------------------------
+- Write in professional ultrasound narrative style
+- Use flowing sentences (NOT bullet points)
+- Follow selected detail level
+
+Include:
+- organ (liver, gallbladder, kidney, spleen if visible)
+- echogenicity (hyperechoic, hypoechoic, anechoic, heterogeneous)
+- lesion type (mass, cyst, stone, fluid collection)
+- shape (round, irregular)
+- border (well-defined / ill-defined)
+- posterior acoustic features (shadowing, enhancement, none)
+- distribution (focal / diffuse)
+- severity (mild / moderate / suspicious)
+
+Style:
+- Semi-technical language (medical + clear explanation)
+- Avoid overly complex jargon
+
+Normal case:
+- Clearly state no significant abnormality
+- Describe normal echotexture if visible
+
+------------------------
+ABNORMALITY RULES
+------------------------
+- MUST list 1–3 most likely conditions
+- Use numbered format
+
+Example:
+1. Fatty Liver (penumpukan lemak pada hati)
+→ Jelaskan sederhana
+
+2. Cholelithiasis (batu empedu)
+→ Jelaskan sederhana
+
+3. Renal Stone (batu ginjal)
+→ Jelaskan sederhana
+
+Requirements:
+- Medical name + penjelasan Bahasa Indonesia
+- Hindari istilah tanpa penjelasan
+
+If normal:
+"Tidak ditemukan kelainan signifikan pada organ abdomen"
+
+------------------------
+BOUNDING BOX RULES
+------------------------
+- Detect suspicious regions only
+- Maximum 5 boxes
+- Tight and minimal
+- Coordinates normalized (0–1)
+- If normal: return []
+
+------------------------
+RISK ESTIMATION
+------------------------
+- Range: 0–100
+- Based on:
+- lesion type (solid > cystic → lebih berisiko)
+- echogenicity abnormal
+- border irregularity
+- posterior shadowing (stone → tinggi)
+- organ involvement
+
+- Provide explainable reasoning
+
+------------------------
+RECOMMENDATION RULES
+------------------------
+- Doctor-oriented clinical language
+- Not for patients
+
+Structure:
+1. Approach (evaluasi & langkah lanjut)
+2. Treatment (manajemen)
+
+Approach:
+- Korelasi dengan gejala klinis
+- Pertimbangkan pemeriksaan lanjutan (CT / MRI / lab)
+- Follow-up imaging jika perlu
+
+Treatment:
+- Observasi untuk kasus ringan
+- Terapi medis atau intervensi untuk kondisi spesifik
+- Rujukan spesialis jika mencurigakan
+
+Tone:
+- Profesional, objektif, klinis
+
+Risk-based behavior:
+
+LOW RISK:
+- Monitoring rutin
+
+MEDIUM RISK:
+- Evaluasi lanjutan
+
+HIGH RISK:
+- Pemeriksaan lanjutan segera / rujukan spesialis
+
+------------------------
+OUTPUT FORMAT
+------------------------
+Return ONLY valid JSON. No explanation, no markdown.
+
+{{
+"findings": "...",
+"abnormality": "...",
+"risk": 0-100,
+"risk_factors": {{
+    "organ": "...",
+    "lesion_type": "...",
+    "echogenicity": "...",
+    "calculation": "..."
+}},
+"bboxes": [
+    {{"x": 0-1, "y": 0-1, "width": 0-1, "height": 0-1}}
+],
+"recommendation": {{
+    "approach": "...",
+    "treatment": "..."
+}}
+}}
+"""
