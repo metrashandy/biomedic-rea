@@ -349,8 +349,32 @@ export default function ResultSection({
         .join(", ");
     return String(val);
   };
-
   const risk = Number(result?.result?.risk) || 0;
+
+  const getVisualStatus = () => {
+    if (currentAiBboxes.length > 0) {
+      return {
+        label: "Suspect Abnormal",
+        color: "text-red-600",
+        isAbnormal: true,
+      };
+    }
+    if (risk > 25) {
+      return {
+        label: "Perlu Evaluasi",
+        color: "text-amber-600",
+        isAbnormal: true,
+      };
+    }
+    return {
+      label: "Tampak Bersih",
+      color: "text-green-600",
+      isAbnormal: false,
+    };
+  };
+  const visualStatus = getVisualStatus();
+
+  
   const totalImagesCount = totalImages || allImages.length || 1;
 
   return (
@@ -460,19 +484,19 @@ export default function ResultSection({
                   <Scan size={14} /> Area Terdeteksi
                 </span>
                 <p className="font-bold text-lg text-slate-800 mt-1">
-                  {currentAiBboxes.length} Region
+                  {currentAiBboxes.length > 0
+                    ? `${currentAiBboxes.length} Region`
+                    : risk > 25
+                      ? "Terdeteksi (no bbox)"
+                      : "Tidak Ada"}
                 </p>
               </div>
               <div className="bg-sky-50 p-4 rounded-xl border border-sky-100">
                 <span className="text-slate-500 text-sm flex items-center gap-1">
                   <AlertTriangle size={14} /> Status Visual
                 </span>
-                <p
-                  className={`font-bold text-lg mt-1 ${currentAiBboxes.length > 0 ? "text-red-600" : "text-green-600"}`}
-                >
-                  {currentAiBboxes.length > 0
-                    ? "Suspect Abnormal"
-                    : "Tampak Bersih"}
+                <p className={`font-bold text-lg mt-1 ${visualStatus.color}`}>
+                  {visualStatus.label}
                 </p>
               </div>
               <div className="bg-sky-50 p-4 rounded-xl border border-sky-100">
@@ -484,7 +508,9 @@ export default function ResultSection({
                     ? "Multifokal (Menyebar)"
                     : currentAiBboxes.length === 1
                       ? "Fokal (Terpusat)"
-                      : "Tidak Ada"}
+                      : risk > 25
+                        ? "Difus (tanpa lokalisasi)"
+                        : "Tidak Ada"}
                 </p>
               </div>
               <div className="bg-sky-50 p-4 rounded-xl border border-sky-100">

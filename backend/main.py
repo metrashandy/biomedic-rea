@@ -797,12 +797,59 @@ async def analyze_xray(
     if not isinstance(rf, dict):
         rf = {}
     normalized_rf = {
-        "area":         safe_str(rf.get("area") or rf.get("location") or rf.get("lesion_size") or rf.get("lesion_count") or "-"),
-        "region_count": safe_str(rf.get("region_count") or rf.get("distribution") or "-"),
-        "intensity":    safe_str(rf.get("intensity") or rf.get("severity") or rf.get("mass_effect") or "-"),
-        "calculation":  safe_str(rf.get("calculation") or "-"),
+        # "area" — lokasi anatomis yang terdampak
+        "area": safe_str(
+            rf.get("area") or
+            rf.get("location") or           # CT scan
+            rf.get("lesion_size") or        # CT scan alt
+            rf.get("lesion_count") or       # Fundus, Endoscopy
+            rf.get("lesion_character") or   # USG Payudara
+            rf.get("organ") or              # USG Abdominal
+            rf.get("symmetry") or           # Skin lesion
+            rf.get("rhythm") or             # EKG
+            rf.get("membrane_status") or    # Otoscopic
+            "-"
+        ),
+ 
+        # "region_count" — jumlah/distribusi area abnormal
+        "region_count": safe_str(
+            rf.get("region_count") or
+            rf.get("distribution") or       # Fundus, Endoscopy, USG
+            rf.get("margin") or             # USG Payudara, Skin
+            rf.get("mass_effect") or        # CT scan
+            rf.get("lesion_type") or        # USG Abdominal
+            rf.get("border") or             # Skin lesion
+            rf.get("qrs") or               # EKG
+            rf.get("canal_condition") or    # Otoscopic
+            "-"
+        ),
+ 
+        # "intensity" — tingkat keparahan
+        "intensity": safe_str(
+            rf.get("intensity") or
+            rf.get("severity") or           # Fundus, Endoscopy, USG
+            rf.get("echogenicity") or       # USG Payudara, USG Abdominal
+            rf.get("color") or             # Skin lesion
+            rf.get("st_segment") or        # EKG
+            rf.get("signs_of_infection") or # Otoscopic
+            "-"
+        ),
+ 
+        # "calculation" — penjelasan skor risiko (WAJIB ADA)
+        "calculation": safe_str(
+            rf.get("calculation") or
+            "-"
+        ),
     }
     ai_result["risk_factors"] = normalized_rf
+    if normalized_rf["calculation"] == "-" or not normalized_rf["calculation"].strip():
+        risk_val = ai_result.get("risk", 0)
+        if risk_val >= 70:
+            normalized_rf["calculation"] = f"Skor risiko {risk_val} menunjukkan temuan yang perlu penanganan segera."
+        elif risk_val >= 30:
+            normalized_rf["calculation"] = f"Skor risiko {risk_val} menunjukkan temuan yang perlu pemantauan klinis."
+        else:
+            normalized_rf["calculation"] = f"Skor risiko {risk_val} menunjukkan tidak ada kelainan signifikan yang terdeteksi."
 
     # ── Translate hasil untuk response ───────────────────────
     ai_result["findings"]    = translate_text(ai_result.get("findings") or "")
