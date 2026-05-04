@@ -432,7 +432,7 @@ def _empty_result() -> dict:
 # ================== HELPER: PANGGIL AI UNTUK 1 GAMBAR ==================
 def call_ai_single(prompt: str, image_base64: str, mime_type: str) -> dict:
     response = client.responses.create(
-        model="gpt-4o-mini",
+        model="gpt-5.4-mini",
         max_output_tokens=4096,   # ← NAIK dari 1000 ke 4096
         input=[{
             "role": "user",
@@ -470,7 +470,7 @@ def call_ai_combine(
         prompt += f"\nPatient symptoms (for context): {symptoms_en}\n"
  
     response = client.responses.create(
-        model="gpt-4o-mini",
+        model="gpt-5.4-mini",
         input=[{
             "role": "user",
             "content": [{"type": "input_text", "text": prompt}]
@@ -681,6 +681,17 @@ async def analyze_xray(
             print(f"❌ ERROR combine: {e}. Fallback ke hasil gambar pertama.")
             # Fallback: pakai hasil gambar pertama
             ai_result = per_image_results[0]
+            
+        risks = [r.get("risk", 0) for r in per_image_results if isinstance(r, dict)]
+
+        if len(risks) > 0:
+            # ambil max supaya sensitif ke kondisi terburuk
+            ai_result["risk"] = max(risks)
+
+            # OPTIONAL: rata-rata
+            # ai_result["risk"] = int(sum(risks) / len(risks))
+        else:
+            ai_result["risk"] = 0
 
     # ── Pastikan bboxes top-level ada ────────────────────────
     if "bboxes" not in ai_result:
@@ -1186,42 +1197,87 @@ def summarize_text(text: str, level: str) -> str:
     if level == "short":
         target = "maksimal 2 kalimat"
     elif level == "medium":
-        target = "sekitar 4–6 kalimat"
+        target = "maksimal 5 kalimat"
     else:
         target = "tanpa perubahan"
 
     prompt = f"""
-    Ringkas teks medis berikut menjadi {target}.
-    - Pertahankan istilah klinis penting
-    - Jangan menambah informasi baru
-    - Bahasa profesional
+Ringkas teks medis berikut menjadi {target}.
 
-    Teks:
-    {text}
-    """
+ATURAN WAJIB:
+- Gunakan BAHASA INDONESIA sepenuhnya
+- Jangan gunakan bahasa Inggris
+- Pertahankan istilah medis penting
+- Jangan menambah informasi baru
+- Jangan mengubah makna klinis
+- Jangan mengubah format menjadi paragraf panjang yang tidak terstruktur
+
+Teks:
+{text}
+"""
 
     resp = client.responses.create(
-        model="gpt-4o-mini",
+        model="gpt-5.4-mini",
         input=prompt,
         temperature=0.2
     )
 
     return resp.output[0].content[0].text.strip()
 
+def summarize_abnormality(abnormalities, level):
+    """
+    Menjaga format abnormality tetap ARRAY + terstruktur.
+    Tidak menggunakan AI (deterministic).
+    """
+
+    if not abnormalities:
+        return ["-"]
+
+    # Jika string (fallback dari AI lama)
+    if isinstance(abnormalities, str):
+        lines = [line.strip() for line in abnormalities.split("\n") if line.strip()]
+    elif isinstance(abnormalities, list):
+        lines = [str(item).strip() for item in abnormalities if str(item).strip()]
+    else:
+        return ["-"]
+
+    # Bersihkan numbering dari AI (kalau ada "1. ")
+    cleaned = []
+    for item in lines:
+        if item[:2].isdigit() and item[1] == ".":
+            item = item[3:].strip()
+        cleaned.append(item)
+
+    # 🎯 Kontrol berdasarkan level
+    if level == "short":
+        return cleaned[:1]
+
+    if level == "medium":
+        return cleaned[:2]
+
+    return cleaned  # long → semua
+
 def summarize_ai_result(ai_result: dict, level: str) -> dict:
     if level == "long":
-        return ai_result
+        if level == "long":
+            return {
+                **ai_result,
+                "findings": translate_text(ai_result.get("findings")),
+                "recommendation": {
+                    "approach": translate_text(ai_result.get("recommendation", {}).get("approach")),
+                    "treatment": translate_text(ai_result.get("recommendation", {}).get("treatment")),
+                }
+            }
 
     return {
         **ai_result,
         "findings": summarize_text(ai_result.get("findings"), level),
-        "abnormality": summarize_text(ai_result.get("abnormality"), level),
+        "abnormality": summarize_abnormality(ai_result.get("abnormality"), level),
         "recommendation": {
             "approach": summarize_text(ai_result.get("recommendation", {}).get("approach"), level),
             "treatment": summarize_text(ai_result.get("recommendation", {}).get("treatment"), level),
         }
     }
-
 
 # ================== SEEDING DATA DUMMY ==================
 seed_everything()

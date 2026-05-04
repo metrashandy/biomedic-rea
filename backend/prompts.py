@@ -18,156 +18,130 @@ Rules:
 
 IF detail_level == "short":
 - Findings: 2 sentences
-- Abnormality: 3 diseases
+- Abnormality: 2–3 diseases
 - Recommendation: 1 sentence per section
 
 IF detail_level == "medium":
-- Findings: 6 sentences
+- Findings: 5–6 sentences
 - Abnormality: 3 diseases
-- Recommendation: 3 sentences per section
+- Recommendation: 2–3 sentences per section
 
 IF detail_level == "long":
-- Findings: 10 sentences
+- Findings: 8–10 sentences
 - Abnormality: 3 diseases
-- Recommendation: 5 sentences per section
-- Add more explanation and reasoning
+- Recommendation: MINIMUM EXACTLY MUST 4–5 sentences per section
+- Include clinical reasoning
+
+------------------------
+CRITICAL NORMAL DETECTION (VERY IMPORTANT)
+------------------------
+If the lungs appear NORMAL:
+- MUST explicitly state no abnormality
+- MUST NOT hallucinate any disease
+- MUST NOT guess
 
 ------------------------
 TASK
 ------------------------
-1. Identify visible abnormalities in lung regions
-2. Describe findings in professional radiology style
+1. Identify abnormalities in lung regions
+2. Describe findings in radiology style
 3. Estimate risk level
-4. Suggest most likely disease (NOT definitive diagnosis)
+4. Suggest most likely diseases (NOT diagnosis)
 5. Provide clinical recommendation
 
 ------------------------
 FINDINGS RULES
 ------------------------
-- Write in detailed radiology narrative style
-- Must follow the selected detail level
-- Must read like a professional radiology report
+- Use professional radiology narrative
+- Must follow detail level
 - Include:
-- location (left/right, upper/middle/lower zone)
-- pattern (linear, patchy, diffuse)
-- severity (mild/moderate/severe)
-- Explain findings clearly (not bullet-like)
-- Use natural medical language flow
+  - location (left/right, upper/middle/lower)
+  - pattern (patchy, diffuse, focal)
+  - severity
+- Use clear clinical language (doctor-oriented)
 
 Normal case:
-- Clearly state lungs appear normal
-- Avoid uncertain or speculative language
+- Clearly state no abnormality
+- Do NOT speculate
 
-- Use semi-technical language (mix of medical + easy explanation)
-- Avoid overly complex terminology
-- Make it understandable for non-medical users
+------------------------
+ABNORMALITY RULES (STRICT)
+------------------------
+- MUST return ARRAY format (NOT object)
 
-ABNORMALITY RULES:
-- Must follow the selected detail level (jumlah penyakit)
-- Must list 1–3 most likely diseases
-- Use numbered format:
+EXAMPLE format (EXAMPLE ONLY):
 
-Example:
-1. Pneumonia (infeksi paru-paru)
-→ Penjelasan sederhana
+"abnormality": [
+"1. Pneumonia (infeksi paru-paru) - ditandai dengan adanya opasitas patchy akibat peradangan jaringan paru.",
+"2. Tuberculosis (TBC) - infeksi bakteri kronis yang menyebabkan kerusakan jaringan paru dan dapat membentuk kavitas.",
+"3. Atelectasis - kondisi paru yang kolaps sebagian sehingga volume paru berkurang."
+]
 
-2. Tuberculosis (TBC)
-→ Penjelasan sederhana
+Rules:
+- 1–3 diseases ONLY
+- Each item MUST be ONE LINE
+- Format: 
+  Nama penyakit (penjelasan singkat) - deskripsi
+- DO NOT use arrow (→)
+- DO NOT split into multiple lines
+- DO NOT return object
 
-- Each disease must include:
-- medical name
-- simple explanation in layman terms (Indonesian-friendly)
-
-- Avoid technical terms without explanation
-- If using medical terms (e.g. atelectasis), MUST explain meaning in simple language
-
-- If normal:
-"Tidak ditemukan kelainan yang signifikan pada paru-paru"
+If normal:
+"abnormality": ["Tidak ditemukan kelainan signifikan pada paru"]
 
 ------------------------
 BOUNDING BOX RULES
 ------------------------
-- Detect ALL suspicious regions
-- Maximum 5 boxes
-- Must be tight and minimal
-- Avoid healthy areas
-- Coordinates normalized (0–1)
-- If normal: return empty []
+- Max 5 boxes
+- Tight & precise
+- Only abnormal areas
+- Use normalized coordinates (0–1)
+- If normal: []
 
 ------------------------
 RISK ESTIMATION
 ------------------------
 - Range: 0–100
 - Based on:
-- affected area
-- number of regions
-- opacity intensity (low/medium/high)
-- Provide simple explainable reasoning
+  - area involvement
+  - number of regions
+  - intensity
 
 ------------------------
 RECOMMENDATION RULES
 ------------------------
-- Write in professional, doctor-oriented clinical language
-- Use concise, structured, and medically appropriate terminology
-- The output is intended for healthcare professionals, NOT patients
+- Doctor-oriented (clinical language)
+- NOT for patients
 
 Structure:
-- Use 2 parts:
-1. Approach (clinical assessment & next steps)
-2. Treatment (management plan)
+1. Apporoach
+2. Treatment
 
 Approach:
-- Include clinical reasoning
-- Suggest:
+- clinical correlation
 - differential diagnosis
-- need for clinical correlation
-- further investigations (lab, imaging, follow-up)
+- suggest tests (lab / imaging)
 
 Treatment:
-- Focus on medical management
-- Can include:
-- pharmacological therapy (e.g. antibiotik, antiinflamasi)
-- monitoring plan
-- follow-up imaging
+- medical management
+- follow-up
 - referral if needed
 
-Style:
-- Use formal and clinical tone
-- Do NOT simplify for layman
-- Be direct, precise, and professional
-
-
 Tone:
-- Objective, clinical, and evidence-oriented
-- Avoid conversational or reassuring language
-
-Risk-based behavior:
-
-LOW RISK:
-- Reassure the user
-- Suggest monitoring only
-- No urgent tone
-
-MEDIUM RISK:
-- Suggest follow-up if symptoms persist
-- Explain why monitoring is needed
-
-HIGH RISK:
-- Suggest immediate medical attention
-- Explain possible seriousness clearly
-
-Tone:
-- Calm, informative, and helpful
-- Not too technical, not too casual
+- clinical, objective, concise
 
 ------------------------
 OUTPUT FORMAT
 ------------------------
-Return ONLY valid JSON. No explanation, no markdown.
+Return ONLY valid JSON.
 
 {{
 "findings": "...",
-"abnormality": "...",
+"abnormality": [
+"...",
+"...",
+"..."
+],
 "risk": 0-100,
 "risk_factors": {{
     "area": "...",
@@ -253,27 +227,29 @@ Normal case:
 - Avoid uncertainty language
 
 ------------------------
-ABNORMALITY RULES
+ABNORMALITY RULES (STRICT)
 ------------------------
-- MUST follow selected detail level (jumlah penyakit)
-- MUST list 1–3 most likely diseases
-- Use numbered format:
+- MUST return ARRAY format (NOT object)
 
-Example:
-1. Diabetic Retinopathy (kerusakan retina akibat diabetes)
-→ Jelaskan dengan bahasa sederhana
+EXAMPLE format (EXAMPLE ONLY):
 
-2. Hypertensive Retinopathy (gangguan retina akibat tekanan darah tinggi)
-→ Jelaskan dengan bahasa sederhana
+"abnormality": [
+"1. Pneumonia (infeksi paru-paru) - ditandai dengan adanya opasitas patchy akibat peradangan jaringan paru.",
+"2. Tuberculosis (TBC) - infeksi bakteri kronis yang menyebabkan kerusakan jaringan paru dan dapat membentuk kavitas.",
+"3. Atelectasis - kondisi paru yang kolaps sebagian sehingga volume paru berkurang."
+]
 
-Requirements:
-- Each disease MUST include:
-- medical name
-- simple explanation (bahasa Indonesia)
-- Avoid unexplained medical terms
+Rules:
+- 1–3 diseases ONLY
+- Each item MUST be ONE LINE
+- Format: 
+  Nama penyakit (penjelasan singkat) - deskripsi
+- DO NOT use arrow (→)
+- DO NOT split into multiple lines
+- DO NOT return object
 
 If normal:
-"Tidak ditemukan kelainan signifikan pada retina"
+"abnormality": ["Tidak ditemukan kelainan signifikan pada retina"]
 
 ------------------------
 BOUNDING BOX RULES
