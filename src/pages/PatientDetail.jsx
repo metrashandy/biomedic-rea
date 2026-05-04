@@ -620,6 +620,21 @@ export default function PatientDetail() {
                         }}
                         exporting={false}
                         onExport={() => exportToPDF(uploadResult, patient)}
+                        onExportWithLevel={async (level) => {
+                          const rId = uploadResult?.record_id;
+                          if (!rId) return toast.error("ID tidak ditemukan");
+                          const toastId = toast.loading("Meringkas laporan...");
+                          try {
+                            const res = await fetch(
+                              `http://127.0.0.1:8000/api/records/${rId}/export?detail_level=${level}`,
+                            );
+                            const data = await res.json();
+                            await exportToPDF(data.data, patient);
+                            toast.success("PDF berhasil!", { id: toastId });
+                          } catch {
+                            toast.error("Gagal", { id: toastId });
+                          }
+                        }}
                         setDoctorBoxes={setActiveDoctorBoxes} // ← setter per gambar aktif
                         doctorBoxes={activeDoctorBoxes} // ← boxes gambar aktif saja
                         doctorNotes={doctorNotes}

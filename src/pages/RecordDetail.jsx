@@ -13,11 +13,12 @@ export default function RecordDetail() {
 
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [exporting, setExporting] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [gambarList, setGambarList] = useState([]);
+  const [exporting, setExporting] = useState(false);
+  const [exportDetailLevel, setExportDetailLevel] = useState("long");
 
   // doctorBoxesMap: { id_gambar: [box, ...] }
   const [doctorBoxesMap, setDoctorBoxesMap] = useState({});
@@ -130,14 +131,17 @@ export default function RecordDetail() {
     if (!data) return;
     setShowDownloadModal(false);
     setExporting(true);
-    const toastId = toast.loading("Sedang membuat PDF...");
+    const toastId = toast.loading("Meringkas laporan...");
     try {
+      const res = await fetch(
+        `http://127.0.0.1:8000/api/records/${recordId}/export?detail_level=${exportDetailLevel}`,
+      );
+      const exportData = await res.json();
+
       await exportToPDF(
         {
-          ai_result: data.ai_result,
+          ai_result: withAI ? exportData.data.result : data.ai_result,
           gambar_asli_url: data.gambar_asli_url,
-          gambar_hasil_url: data.gambar_hasil_url,
-          gambar_dokter_url: data.gambar_dokter_url,
           doctorBoxes: activeDoctorBoxes,
           doctorNotes,
           date: data.date || new Date().toLocaleDateString(),
@@ -149,9 +153,9 @@ export default function RecordDetail() {
         },
         withAI,
       );
-      toast.success("PDF Berhasil diunduh!", { id: toastId });
+      toast.success("PDF berhasil!", { id: toastId });
     } catch {
-      toast.error("Gagal mengekspor PDF", { id: toastId });
+      toast.error("Gagal", { id: toastId });
     } finally {
       setExporting(false);
     }
@@ -273,6 +277,8 @@ export default function RecordDetail() {
             onReset={() => navigate("/patients")}
             exporting={exporting}
             onExport={() => setShowDownloadModal(true)}
+            onDetailLevelChange={setExportDetailLevel}
+            onExportWithLevel={() => setShowDownloadModal(true)}
             setDoctorBoxes={setActiveDoctorBoxes}
             doctorBoxes={activeDoctorBoxes}
             doctorNotes={doctorNotes}

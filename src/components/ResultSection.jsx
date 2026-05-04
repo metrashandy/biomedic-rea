@@ -46,6 +46,8 @@ export default function ResultSection({
   totalImages,
   activeImageIndex,
   onImageChange,
+  onDetailLevelChange,
+  onExportWithLevel,
 }) {
   const imageRef = useRef(null);
   const [showAIBoxes, setShowAIBoxes] = useState(true);
@@ -642,7 +644,13 @@ export default function ResultSection({
           Simpan Catatan Dokter
         </button>
         <button
-          onClick={onExport}
+          onClick={() => {
+            if (onExportWithLevel) {
+              onExportWithLevel(detailLevel);
+            } else if (onExport) {
+              onExport();
+            }
+          }}
           disabled={exporting}
           className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl shadow-sm transition-colors disabled:opacity-50"
         >
@@ -655,7 +663,10 @@ export default function ResultSection({
           </span>
           <select
             value={detailLevel}
-            onChange={(e) => setDetailLevel(e.target.value)}
+            onChange={(e) => {
+              setDetailLevel(e.target.value);
+              onDetailLevelChange?.(e.target.value);
+            }}
             className="bg-transparent font-bold text-slate-700 outline-none cursor-pointer text-sm pr-2 border-none appearance-none"
           >
             <option value="short">⚡ Pendek</option>
