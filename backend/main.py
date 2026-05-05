@@ -226,7 +226,7 @@ def get_single_prompt(analysis_type: str, detail_level: str) -> str:
         return get_prompt_fundus(detail_level)
     elif "ct" in tipe_lower:
         return get_prompt_ct(detail_level)
-    elif "endoscopy" in tipe_lower:
+    elif "endoskopi" in tipe_lower:
         return get_prompt_endoscopy(detail_level)
     elif "usg payudara" in tipe_lower:
         return get_prompt_breast_usg(detail_level)

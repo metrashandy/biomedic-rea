@@ -31,7 +31,6 @@ const CATEGORIES = [
   "Endoskopi",
   "CT Scan",
   "USG Payudara",
-  "USG Abdominal",
   "EKG",
   "Otoskopi",
 ];

@@ -493,6 +493,7 @@ Return ONLY valid JSON. No explanation, no markdown.
 }}
 """
 
+
 def get_prompt_endoscopy(detail_level):
     return f"""
 Analyze this gastrointestinal endoscopy image.
@@ -562,28 +563,29 @@ Normal case:
 - Avoid uncertainty language
 
 ------------------------
-ABNORMALITY RULES
+ABNORMALITY RULES (STRICT)
 ------------------------
-- MUST follow selected detail level (jumlah kondisi)
-- MUST list 1–3 most likely conditions
-- Use numbered format:
+- MUST return ARRAY format (NOT object)
 
-Example:
-1. Gastritis (peradangan pada dinding lambung)
-→ Jelaskan secara sederhana
+EXAMPLE format (EXAMPLE ONLY):
 
-2. Peptic Ulcer (luka pada lambung atau duodenum)
-→ Jelaskan secara sederhana
+"abnormality": [
+"1. Pneumonia (infeksi paru-paru) - ditandai dengan adanya opasitas patchy akibat peradangan jaringan paru.",
+"2. Tuberculosis (TBC) - infeksi bakteri kronis yang menyebabkan kerusakan jaringan paru dan dapat membentuk kavitas.",
+"3. Atelectasis - kondisi paru yang kolaps sebagian sehingga volume paru berkurang."
+]
 
-3. Colonic Polyp (benjolan kecil di usus besar)
-→ Jelaskan secara sederhana
-
-Requirements:
-- Include medical name + simple explanation (Bahasa Indonesia)
-- Avoid unexplained jargon
+Rules:
+- 1–3 diseases ONLY
+- Each item MUST be ONE LINE
+- Format: 
+  Nama penyakit (penjelasan singkat) - deskripsi
+- DO NOT use arrow (→)
+- DO NOT split into multiple lines
+- DO NOT return object
 
 If normal:
-"Tidak ditemukan kelainan signifikan pada mukosa saluran cerna"
+"abnormality": ["Tidak ditemukan kelainan signifikan pada mukosa saluran cerna"]
 
 ------------------------
 BOUNDING BOX RULES
@@ -685,6 +687,7 @@ Return ONLY valid JSON. No explanation, no markdown.
 }}
 }}
 """
+
 
 # ================================================================================
 # PROMPT MULTI-GAMBAR
@@ -995,169 +998,184 @@ The output detail level is: {detail_level}
 Rules:
 
 IF detail_level == "short":
-- Findings: 2 sentences
-- Abnormality: 3 diseases
-- Recommendation: 1 sentence per section
+- Findings: 2 kalimat
+- Abnormality: maksimal 1–2 kondisi
+- Recommendation: 1 kalimat per bagian
 
 IF detail_level == "medium":
-- Findings: 6 sentences
-- Abnormality: 3 diseases
-- Recommendation: 3 sentences per section
+- Findings: 5–6 kalimat
+- Abnormality: maksimal 2 kondisi
+- Recommendation: 2–3 kalimat per bagian
 
 IF detail_level == "long":
-- Findings: 10 sentences
-- Abnormality: 3 diseases
-- Recommendation: 5 sentences per section
-- Add more explanation and reasoning
+- Findings: 8–10 kalimat (WAJIB, tidak boleh kurang)
+- Abnormality: maksimal 3 kondisi (HANYA jika ada lesi jelas)
+- Recommendation:
+  - Approach: minimal 5 kalimat
+  - Treatment: minimal 5 kalimat
+  - Harus mencantumkan alasan klinis (reasoning)
+
+------------------------
+CRITICAL NORMAL DETECTION (VERY STRICT)
+------------------------
+Sebelum menyimpulkan abnormalitas, tentukan terlebih dahulu:
+
+Apakah terdapat lesi yang JELAS dan DEFINITIF?
+
+Jika TIDAK:
+- WAJIB diklasifikasikan sebagai NORMAL
+- DILARANG menyebutkan penyakit
+- DILARANG membuat dugaan
+
+Kriteria NORMAL:
+- Tidak ada massa yang jelas
+- Tidak ada batas lesi tegas
+- Tidak ada bayangan posterior mencurigakan
+- Tidak ada distorsi arsitektur
+
+Jika hanya ditemukan:
+- tekstur heterogen ringan
+- variasi jaringan
+- pola tidak teratur ringan
+
+→ Ini adalah VARIASI NORMAL, BUKAN penyakit.
+
+Jika NORMAL:
+- findings harus menyatakan jaringan normal
+- abnormality HARUS:
+
+"abnormality": ["Tidak ditemukan kelainan signifikan pada jaringan payudara"]
+
+- risk HARUS 0–10
+- bboxes HARUS []
+
+Pelanggaran aturan ini tidak diperbolehkan.
 
 ------------------------
 TASK
 ------------------------
-1. Identify visible breast abnormalities
-2. Describe findings in professional radiology (ultrasound) style
-3. Estimate risk level
-4. Suggest most likely diagnosis (NOT definitive)
-5. Provide clinical recommendation
+1. Identifikasi apakah ada lesi yang jelas
+2. Deskripsikan temuan dalam gaya radiologi USG
+3. Estimasi tingkat risiko
+4. HANYA jika ada lesi → berikan kemungkinan diagnosis
+5. Berikan rekomendasi klinis
 
 ------------------------
 FINDINGS RULES
 ------------------------
-- Write in detailed breast ultrasound narrative style
-- Must follow the selected detail level
-- Must read like a professional radiology report
-- Use flowing sentences (NOT bullet points)
+- Narasi radiologi profesional (Bahasa Indonesia)
+- Bukan bullet point
+- Harus mengalir seperti laporan dokter
 
-Include:
-- location (left/right breast, quadrant if possible)
-- lesion type (mass, cyst, solid lesion, calcification, ductal dilation)
-- shape (round, oval, irregular)
-- margin (well-defined, ill-defined, spiculated)
-- echogenicity (hypoechoic, hyperechoic, anechoic, heterogeneous)
-- posterior features (enhancement, shadowing, none)
-- vascularity (if suspected from pattern)
-- distribution (localized, multiple, diffuse)
-- severity (mild, moderate, suspicious)
+Wajib mencakup:
+- lokasi (payudara kiri/kanan, kuadran jika memungkinkan)
+- jenis lesi (massa, kista, dll) HANYA jika ada
+- bentuk (oval, bulat, tidak teratur)
+- margin (tegas / tidak tegas)
+- echogenicity (hipoekoik, hiperekoik, anekoik, heterogen)
+- fitur posterior (enhancement / shadowing)
+- distribusi (lokal / difus)
+- tingkat kecurigaan
 
-Style:
-- Use semi-technical language (medical + simple explanation)
-- Avoid overly complex jargon
-- Make it understandable for non-medical users
-
-Normal case:
-- Clearly state no suspicious lesion identified
-- Mention homogeneous parenchyma if appropriate
-- Avoid uncertainty language
+Jika NORMAL:
+- sebutkan jaringan homogen / tanpa lesi
+- jangan gunakan bahasa ragu
 
 ------------------------
-ABNORMALITY RULES
+ABNORMALITY RULES (STRICT)
 ------------------------
-- MUST follow selected detail level (jumlah penyakit)
-- MUST list 1–3 most likely conditions
-- Use numbered format:
+- HARUS berupa ARRAY
+- HANYA diisi jika ADA lesi jelas
+- Jika tidak ada → gunakan format normal
 
-Example:
-1. Fibroadenoma (benjolan jinak pada payudara)
-→ Jelaskan dengan bahasa sederhana
+Format:
+"abnormality": [
+"1. Nama penyakit (penjelasan singkat) - definisi singkat penyakit"
+]
 
-2. Breast cyst (kista berisi cairan)
-→ Jelaskan dengan bahasa sederhana
-
-3. Breast carcinoma (kanker payudara)
-→ Jelaskan dengan bahasa sederhana
-
-Requirements:
-- Each disease MUST include:
-- medical name
-- simple explanation (Bahasa Indonesia)
-- Avoid unexplained medical terms
-
-If normal:
-"Tidak ditemukan kelainan signifikan pada jaringan payudara"
+Aturan:
+- WAJIB MEMBERIKAN 3 kondisi
+- Satu baris per kondisi
+- Tidak boleh paragraf
+- Tidak boleh narasi panjang
+- Tidak boleh menggunakan tanda panah
 
 ------------------------
 BOUNDING BOX RULES
 ------------------------
-- Detect ALL suspicious regions
-- Maximum 5 boxes
-- Tight and minimal
-- Focus only on abnormal areas
-- Coordinates normalized (0–1)
-- If normal: return []
+- Maksimal 5 box
+- Hanya area abnormal
+- Koordinat 0–1
+- Jika normal: []
 
 ------------------------
-RISK ESTIMATION
+RISK ESTIMATION (STRICT)
 ------------------------
 - Range: 0–100
-- Based on:
-- lesion shape (irregular lebih tinggi risiko)
-- margin (spiculated / ill-defined → lebih tinggi)
-- echogenicity (heterogeneous / hypoechoic solid → lebih tinggi)
-- posterior shadowing (meningkatkan risiko keganasan)
-- number of lesions
 
-- Provide explainable reasoning
+Jika NORMAL:
+→ 0–10
+
+Jika abnormal ringan:
+→ 20–40
+
+Jika mencurigakan:
+→ 40–70
+
+Jika sangat mencurigakan:
+→ 70–90
+
+- Harus konsisten dengan temuan
+- Tidak boleh asal nilai tengah
 
 ------------------------
 RECOMMENDATION RULES
 ------------------------
-- Write in professional, doctor-oriented clinical language
-- Use concise, structured, and medically appropriate terminology
-- The output is intended for healthcare professionals, NOT patients
+- Bahasa klinis profesional (Bahasa Indonesia)
 
-Structure:
-- Use 2 parts:
-1. Approach (clinical assessment & next steps)
-2. Treatment (management plan)
+Struktur:
+1. Approach
+2. Treatment
 
 Approach:
-- Include clinical reasoning
-- Suggest:
-- BI-RADS consideration (if applicable)
-- correlation with clinical exam
-- need for further imaging (mammography, MRI)
-- biopsy if suspicious
+- korelasi klinis
+- pertimbangan BI-RADS (jika relevan)
+- imaging tambahan (mamografi / MRI)
+- indikasi biopsi
 
 Treatment:
-- Focus on medical management
-- Can include:
 - follow-up imaging
-- FNAB / core biopsy
-- surgical referral if needed
+- FNAB / core biopsy jika perlu
+- rujukan spesialis
 
-Style:
-- Use formal and clinical tone
-- Do NOT simplify for layman
-- Be direct, precise, and professional
+Jika NORMAL:
+- sarankan observasi rutin saja
 
-Tone:
-- Objective, clinical, and evidence-oriented
-- Avoid conversational language
-
-Risk-based behavior:
-
-LOW RISK:
-- Suggest routine follow-up imaging
-
-MEDIUM RISK:
-- Suggest closer monitoring or additional imaging
-
-HIGH RISK:
-- Suggest biopsy or urgent specialist referral
+------------------------
+FINAL VALIDATION (MANDATORY)
+------------------------
+Sebelum output:
+- Jika tidak ada lesi → pastikan abnormality kosong
+- Pastikan bahasa Indonesia
+- Pastikan panjang sesuai detail level
+- Pastikan risk sesuai kondisi
 
 ------------------------
 OUTPUT FORMAT
 ------------------------
-Return ONLY valid JSON. No explanation, no markdown.
+Return ONLY valid JSON.
 
 {{
 "findings": "...",
-"abnormality": "...",
+"abnormality": [
+"..."
+],
 "risk": 0-100,
 "risk_factors": {{
     "lesion_character": "...",
     "margin": "...",
     "echogenicity": "...",
-    "calculation": "..."
+    "calculation": "Alasan pemberian skor risiko"
 }},
 "bboxes": [
     {{"x": 0-1, "y": 0-1, "width": 0-1, "height": 0-1}}
@@ -1381,6 +1399,37 @@ IF detail_level == "long":
 - Include rhythm reasoning
 
 ------------------------
+CRITICAL NORMAL DETECTION (STRICT)
+------------------------
+Before identifying any abnormality, you MUST first determine whether the ECG is clearly abnormal.
+
+If the ECG shows:
+- regular rhythm
+- consistent RR intervals
+- visible P waves before each QRS
+- normal QRS duration
+- no significant ST elevation or depression
+- no abnormal T wave inversion
+
+Then it MUST be classified as NORMAL.
+
+STRICT RULES:
+- DO NOT force abnormality detection
+- DO NOT speculate or assume disease
+- DO NOT list any condition if findings are within normal variation
+
+If NORMAL:
+- findings MUST clearly state "normal sinus rhythm"
+- abnormality MUST be:
+
+"abnormality": ["Tidak ditemukan kelainan pada pola EKG"]
+
+- risk MUST be between 0–10
+- bboxes MUST be []
+
+Any violation of this rule is NOT allowed.
+
+------------------------
 TASK
 ------------------------
 1. Identify waveform abnormalities
@@ -1418,14 +1467,7 @@ ABNORMALITY RULES
 - MUST list 1–3 most likely conditions
 
 Example:
-1. Atrial Fibrillation (irama jantung tidak teratur)
-→ Penjelasan sederhana
-
-2. Tachycardia (denyut jantung cepat)
-→ Penjelasan sederhana
-
-3. Myocardial Infarction (serangan jantung)
-→ Penjelasan sederhana
+1. Atrial Fibrillation (irama jantung tidak teratur) - Penjelasan sederhana
 
 If normal:
 "Tidak ditemukan kelainan pada pola EKG"
