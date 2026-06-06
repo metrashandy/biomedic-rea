@@ -71,57 +71,69 @@ class DiagnosisRequest(BaseModel):
     weight: Optional[float] = None
     height: Optional[float] = None
     keluhan: str
-    gejala: str
+    gejala: Optional[str] = ""
     tandaVital: Optional[str] = ""
     hasilLab: Optional[str] = ""
     alergi: Optional[str] = ""
     riwayat: Optional[str] = ""
     catatan: Optional[str] = ""
     save_visit: bool = True
-    # ✅ Riwayat percakapan terfilter dari frontend (hanya poin yang dicentang dokter)
     conversation_history: Optional[List[ConversationTurn]] = []
 
 
 # ==========================================
-# AI DIAGNOSIS dengan Contextual Memory + ICD-10
+# AI DIAGNOSIS
 # ==========================================
 def generate_ai_diagnosis(patient_data: dict, db_history_text: str, conversation_history: list):
     system_prompt = """
 Anda adalah asisten dokter spesialis (Clinical Decision Support System) yang sangat ahli dan akurat.
-Tugas Anda adalah menganalisis data klinis pasien dan memberikan kemungkinan diagnosis beserta kode ICD-10 dan rekomendasi pengobatan.
+Tugas Anda adalah menganalisis data klinis pasien dan memberikan kemungkinan diagnosis beserta kode ICD-10,
+rekomendasi pengobatan, dan tanda bahaya yang harus diwaspadai dokter.
 
 PERHATIAN PENTING:
-- Dosis obat harus mempertimbangkan Umur dan Berat Badan pasien.
-- Wajib periksa dan perhatikan alergi obat yang disebutkan!
-- Jika ada riwayat percakapan sebelumnya, gunakan sebagai konteks tambahan.
+- Dosis obat WAJIB mempertimbangkan Umur dan Berat Badan pasien secara spesifik.
+- WAJIB periksa alergi pasien — jangan merekomendasikan obat yang termasuk dalam daftar alergi!
+- Jika ada riwayat percakapan sebelumnya, gunakan sebagai konteks tambahan untuk diagnosis yang lebih akurat.
+- Berikan nama obat generik beserta dosis dan durasi pemakaian yang spesifik.
+- Selalu pertimbangkan diagnosis banding (differential diagnosis).
 
 FORMAT OUTPUT:
-Anda WAJIB merespons HANYA dalam format JSON berikut (tanpa tambahan apapun di luar JSON):
+Anda WAJIB merespons HANYA dalam format JSON berikut (tanpa teks apapun di luar JSON):
 {
-    "penyakit": "Penjelasan singkat kemungkinan diagnosis medis dalam 1-3 kalimat...",
+    "penyakit": "Penjelasan kemungkinan diagnosis utama beserta diagnosis banding dan alasan klinis dalam 2-4 kalimat.",
     "icd10": [
         {"kode": "A15.0", "label": "Tuberculosis of lung, confirmed by sputum microscopy"},
         {"kode": "A15.3", "label": "Tuberculosis of lung, confirmed by unspecified means"}
     ],
     "rekomendasi": [
-        "Rekomendasi 1 dengan dosis spesifik jika obat...",
-        "Rekomendasi 2...",
-        "Rekomendasi tindakan penunjang..."
-    ]
+        "Nama obat generik — dosis — frekuensi — durasi (contoh: Paracetamol 500mg — 3x sehari — selama 3 hari)",
+        "Tindakan non-farmakologi yang direkomendasikan",
+        "Pemeriksaan penunjang yang disarankan beserta alasannya"
+    ],
+    "tanda_bahaya": "Sebutkan secara spesifik kondisi atau gejala red flag pada kasus ini yang mengharuskan rujukan segera ke IGD atau spesialis, beserta alasan klinisnya."
 }
 
-Berikan 2-4 kode ICD-10 yang paling relevan sebagai opsi pilihan dokter.
+ATURAN TAMBAHAN:
+- Berikan 2-4 kode ICD-10 yang paling relevan sebagai opsi pilihan dokter.
+- Rekomendasi minimal 3 poin: farmakologi, non-farmakologi, dan penunjang.
+- Tanda bahaya harus spesifik untuk kondisi pasien ini, bukan pernyataan umum.
+- Selalu akhiri dengan catatan bahwa keputusan klinis final adalah wewenang dokter pemeriksa.
 """
 
-    # Bangun messages array dengan history percakapan
     messages = [{"role": "system", "content": system_prompt}]
 
-    # Tambahkan riwayat percakapan dari sesi ini (selective memory dari frontend)
+    # Tambahkan riwayat percakapan terfilter dari frontend (selective memory)
     for turn in conversation_history:
-        messages.append({"role": "user", "content": turn["user"] if isinstance(turn, dict) else turn.user})
-        messages.append({"role": "assistant", "content": turn["assistant"] if isinstance(turn, dict) else turn.assistant})
+        messages.append({
+            "role": "user",
+            "content": turn["user"] if isinstance(turn, dict) else turn.user
+        })
+        messages.append({
+            "role": "assistant",
+            "content": turn["assistant"] if isinstance(turn, dict) else turn.assistant
+        })
 
-    # Prompt utama untuk kunjungan saat ini
+    # Prompt utama kunjungan saat ini
     user_prompt = f"""
 DATA PASIEN:
 - Nama: {patient_data['name']}
@@ -129,26 +141,26 @@ DATA PASIEN:
 - Gender: {patient_data['gender']}
 - Berat Badan: {patient_data.get('weight') or '-'} kg
 - Tinggi Badan: {patient_data.get('height') or '-'} cm
-- Alergi: {patient_data.get('alergi') or 'Tidak ada'}
-- Riwayat Penyakit Pribadi: {patient_data.get('riwayat') or 'Tidak ada'}
+- Alergi: {patient_data.get('alergi') or 'Tidak ada / tidak diketahui'}
+- Riwayat Penyakit Pribadi: {patient_data.get('riwayat') or 'Tidak ada / tidak diketahui'}
 
-RIWAYAT KUNJUNGAN DATABASE (kunjungan sebelumnya):
+RIWAYAT KUNJUNGAN SEBELUMNYA (dari database):
 {db_history_text}
 
-KONDISI SAAT INI:
+KONDISI KUNJUNGAN SAAT INI:
 - Keluhan Utama: {patient_data['keluhan']}
-- Gejala Tambahan: {patient_data['gejala']}
-- Tanda Vital: {patient_data.get('tandaVital') or 'Tidak diisi'}
+- Gejala Tambahan: {patient_data.get('gejala') or 'Tidak disebutkan'}
+- Tanda Vital: {patient_data.get('tandaVital') or 'Tidak diukur'}
 - Hasil Laboratorium: {patient_data.get('hasilLab') or 'Tidak ada'}
 - Catatan Dokter: {patient_data.get('catatan') or 'Tidak ada'}
 
-Berikan diagnosis, kode ICD-10 (2-4 opsi paling relevan), dan rekomendasi terapi dalam format JSON.
+Berikan analisis diagnosis lengkap dalam format JSON yang sudah ditentukan.
 """
 
     messages.append({"role": "user", "content": user_prompt})
 
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="gpt-5.4",
         response_format={"type": "json_object"},
         temperature=0.2,
         messages=messages
@@ -156,17 +168,19 @@ Berikan diagnosis, kode ICD-10 (2-4 opsi paling relevan), dan rekomendasi terapi
 
     result = json.loads(response.choices[0].message.content)
 
-    # Pastikan field icd10 selalu ada meski AI tidak mengeluarkannya
+    # Pastikan semua field selalu ada
     if "icd10" not in result:
         result["icd10"] = []
     if "rekomendasi" not in result:
         result["rekomendasi"] = []
+    if "tanda_bahaya" not in result:
+        result["tanda_bahaya"] = "Tidak ada tanda bahaya kritis yang teridentifikasi pada kasus ini. Tetap monitor kondisi pasien."
 
     return result
 
 
 # ==========================================
-# ENDPOINT
+# ENDPOINTS
 # ==========================================
 @app.get("/api/history/{patient_id}")
 def get_history(patient_id: int):
@@ -187,7 +201,7 @@ def get_history(patient_id: int):
                     "alergi": v.alergi,
                     "diagnosis_ai": v.diagnosis_ai,
                 }
-                for v in reversed(visits)  # terbaru dulu
+                for v in reversed(visits)
             ]
         }
     finally:
@@ -199,12 +213,11 @@ def analyze_diagnosis(req: DiagnosisRequest):
     db = SessionLocal()
 
     try:
-        # Cari pasien lama untuk ambil riwayat DB
         patient = None
         if req.patient_id:
             patient = db.query(DBPatient).filter(DBPatient.id == req.patient_id).first()
 
-        # Ambil riwayat kunjungan dari DB (konteks jangka panjang)
+        # Ambil riwayat kunjungan dari DB untuk konteks jangka panjang
         db_history_text = "Belum ada riwayat kunjungan sebelumnya."
         if patient:
             past_visits = db.query(DBVisit).filter(DBVisit.patient_id == patient.id).all()
@@ -214,7 +227,6 @@ def analyze_diagnosis(req: DiagnosisRequest):
                     for v in past_visits
                 ])
 
-        # Panggil AI dengan conversation history
         patient_dict = req.dict()
         ai_result = generate_ai_diagnosis(
             patient_dict,
@@ -222,7 +234,7 @@ def analyze_diagnosis(req: DiagnosisRequest):
             req.conversation_history or []
         )
 
-        # Pastikan pasien selalu ada di DB agar db_patient_id bisa dikembalikan ke frontend
+        # Pastikan pasien ada di DB
         if not patient:
             patient = db.query(DBPatient).filter(
                 DBPatient.name == req.name,
@@ -238,7 +250,7 @@ def analyze_diagnosis(req: DiagnosisRequest):
             db.commit()
             db.refresh(patient)
 
-        # Simpan kunjungan ke DB hanya kalau save_visit = True
+        # Simpan ke DB hanya jika save_visit = True
         if req.save_visit:
             icd_summary = ", ".join([f"{i['kode']}" for i in ai_result.get("icd10", [])])
             new_visit = DBVisit(
@@ -253,7 +265,6 @@ def analyze_diagnosis(req: DiagnosisRequest):
             db.add(new_visit)
             db.commit()
 
-        # Selalu kembalikan db_patient_id agar frontend bisa sinkron ID
         ai_result["db_patient_id"] = patient.id
         return ai_result
 

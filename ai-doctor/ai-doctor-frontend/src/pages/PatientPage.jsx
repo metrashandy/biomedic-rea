@@ -2,8 +2,22 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 const DEFAULT_PATIENTS = [
-  { id: 1, name: "Budi Santoso", age: 45, gender: "Laki-laki", weight: 70, height: 170 },
-  { id: 2, name: "Siti Aminah", age: 32, gender: "Perempuan", weight: 55, height: 158 },
+  {
+    id: 1,
+    name: "Budi Santoso",
+    age: 45,
+    gender: "Laki-laki",
+    weight: 70,
+    height: 170,
+  },
+  {
+    id: 2,
+    name: "Siti Aminah",
+    age: 32,
+    gender: "Perempuan",
+    weight: 55,
+    height: 158,
+  },
 ];
 
 const STORAGE_KEY = "clinic_patients";
@@ -33,7 +47,6 @@ export default function PatientPage() {
     height: "",
   });
 
-  // Sync ke localStorage setiap kali daftar pasien berubah
   useEffect(() => {
     savePatients(patients);
   }, [patients]);
@@ -45,7 +58,6 @@ export default function PatientPage() {
       if (!newPatient.name || !newPatient.age)
         return alert("Mohon lengkapi nama dan umur pasien!");
 
-      // Buat ID unik berdasarkan timestamp
       const newId = Date.now();
       patientData = {
         ...newPatient,
@@ -55,7 +67,6 @@ export default function PatientPage() {
         height: newPatient.height ? parseFloat(newPatient.height) : null,
       };
 
-      // Simpan pasien baru ke daftar agar bisa dipakai lagi
       const updatedPatients = [...patients, patientData];
       setPatients(updatedPatients);
       savePatients(updatedPatients);
@@ -65,6 +76,13 @@ export default function PatientPage() {
     }
 
     navigate("/diagnosis", { state: { patient: patientData } });
+  };
+
+  const handleHapusPasien = (id, name) => {
+    if (!confirm(`Hapus pasien "${name}" dari daftar?`)) return;
+    const updated = patients.filter((p) => p.id !== id);
+    setPatients(updated);
+    if (selectedPatientId === String(id)) setSelectedPatientId("");
   };
 
   return (
@@ -118,6 +136,44 @@ export default function PatientPage() {
             <p className="text-xs text-gray-400">
               {patients.length} pasien terdaftar
             </p>
+
+            {/* Daftar pasien dengan tombol hapus */}
+            {patients.length > 0 && (
+              <div className="border border-gray-100 rounded-lg overflow-hidden">
+                <p className="text-xs font-semibold text-gray-500 bg-gray-50 px-3 py-2 border-b border-gray-100">
+                  Daftar Pasien
+                </p>
+                <div className="max-h-48 overflow-y-auto divide-y divide-gray-50">
+                  {patients.map((p) => (
+                    <div
+                      key={p.id}
+                      className={`flex items-center justify-between px-3 py-2 hover:bg-gray-50 transition ${
+                        selectedPatientId === String(p.id) ? "bg-blue-50" : ""
+                      }`}
+                    >
+                      <button
+                        className="flex-1 text-left"
+                        onClick={() => setSelectedPatientId(String(p.id))}
+                      >
+                        <span className="text-sm font-medium text-gray-700">
+                          {p.name}
+                        </span>
+                        <span className="text-xs text-gray-400 ml-2">
+                          {p.age} th · {p.gender}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => handleHapusPasien(p.id, p.name)}
+                        className="text-red-400 hover:text-red-600 text-xs px-2 py-1 rounded hover:bg-red-50 transition ml-2 flex-shrink-0"
+                        title="Hapus dari daftar"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -126,7 +182,7 @@ export default function PatientPage() {
           <div className="space-y-4 mb-6">
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Nama Lengkap *
+                Nama Lengkap <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
@@ -142,7 +198,7 @@ export default function PatientPage() {
             <div className="flex gap-4">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-gray-700">
-                  Umur *
+                  Umur <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"
