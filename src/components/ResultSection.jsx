@@ -374,7 +374,6 @@ export default function ResultSection({
   };
   const visualStatus = getVisualStatus();
 
-  
   const totalImagesCount = totalImages || allImages.length || 1;
 
   return (
@@ -637,7 +636,7 @@ export default function ResultSection({
         <div className="bg-white p-6 rounded-xl border border-slate-200">
           <ResultCard
             title="Rekomendasi Pengobatan (AI)"
-            content={`Approach: ${safeText(result?.result?.recommendation?.approach)}\nTreatment: ${safeText(result?.result?.recommendation?.treatment)}`}
+            content={`Pendekatan: ${safeText(result?.result?.recommendation?.approach)}\nPengobatan: ${safeText(result?.result?.recommendation?.treatment)}`}
           />
           <div className="mt-5 border-t border-slate-100 pt-4">
             <label className="block text-xl font-bold text-[#1e1b4b] mb-4 flex items-center gap-2">
