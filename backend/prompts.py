@@ -1686,171 +1686,152 @@ Return ONLY valid JSON. No explanation, no markdown.
 """
 def get_prompt_otoscopic(detail_level):
     return f"""
-You are an expert otolaryngologist (ENT specialist) analyzing an otoscopic image.
- 
-========================
-STEP 1 — CANAL VISIBILITY CHECK (MANDATORY FIRST STEP)
-========================
-Look at the entire image. Is the ear canal FILLED with material?
- 
-CERUMEN IMPACTION INDICATORS (check all):
-□ The canal lumen is partially or completely filled with dark material
-□ Color: dark brown, reddish-brown, olive green, dark yellow, or black
-□ Texture: chunky/granular/waxy/flaky — NOT smooth membrane
-□ The tympanic membrane is NOT visible or only partially visible
-□ You see debris, hair fragments, or crystalline material mixed in
- 
-IF 3 OR MORE boxes above are checked → CERUMEN IMPACTION. 
-Return this JSON immediately without further analysis:
-{{
-  "findings": "Liang telinga tersumbat sebagian/seluruhnya oleh serumen berwarna [describe color] dengan tekstur [describe texture]. Membran timpani tidak dapat dievaluasi karena terhalang. Tidak ada tanda-tanda infeksi aktif yang dapat dinilai.",
-  "abnormality": "1. Serumen Prop / Cerumen Impaction (penumpukan kotoran telinga)\\n→ Kotoran telinga mengeras dan menumpuk di liang telinga, menyumbat pandangan ke gendang telinga. Perlu dibersihkan sebelum evaluasi lebih lanjut.",
-  "risk": 20,
-  "risk_factors": {{
-    "area": "Liang telinga (seluruh kanal)",
-    "region_count": "Sumbatan penuh / parsial",
-    "intensity": "Ringan - tidak berbahaya namun perlu pembersihan",
-    "calculation": "Skor 20 karena serumen menyumbat kanal sehingga evaluasi membran tidak dapat dilakukan. Risiko rendah namun perlu tindakan pembersihan segera sebelum pemeriksaan ulang."
-  }},
-  "bboxes": [{{"x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8}}],
-  "recommendation": {{
-    "approach": "Pembersihan serumen diperlukan sebelum evaluasi lebih lanjut dapat dilakukan. Pertimbangkan irigasi telinga (ear syringing) atau kuretase manual oleh tenaga medis terlatih. Jangan gunakan cotton bud yang dapat mendorong serumen lebih dalam.",
-    "treatment": "Softening drops (misalnya cerumenolytic seperti carbamide peroxide atau olive oil drops) selama 3-5 hari sebelum irigasi. Rujuk ke THT jika serumen sangat keras atau pasien memiliki riwayat perforasi."
-  }}
-}}
- 
-========================
-STEP 2 — TYMPANIC MEMBRANE ANALYSIS (if membrane IS visible)
-========================
- 
-Now systematically examine the tympanic membrane using this visual guide:
- 
-VISUAL SIGNATURE REFERENCE:
-─────────────────────────────────────────────────────────────────
-NORMAL TYMPANIC MEMBRANE:
-• Color: pearly gray to light gray, translucent
-• Surface: smooth, uniform
-• Light reflex: SHARP triangular cone of light in anterior-inferior quadrant
-• Position: flat/neutral
-• Landmarks: malleus handle clearly visible as white vertical line
-• Umbo: visible as central depression
-• Canal: clean, no discharge
- 
-MYRINGOSCLEROSIS / TYMPANOSCLEROSIS:
-• HALLMARK: White chalk-like or calcium plaques on the membrane surface
-• The plaques are BRIGHT WHITE, opaque, irregular-shaped patches
-• Background membrane may be normal gray or slightly dull
-• NO sign of acute inflammation (no redness, no bulging)
-• Light reflex may be partially obscured by plaques
-• Malleus handle usually still identifiable
-• Plaques can be small/localized or cover large areas
- 
-OTITIS MEDIA WITH EFFUSION (Glue Ear / OME):
-• Membrane color: amber, yellow, or yellow-gray (fluid behind)
-• You may see a visible air-fluid level (horizontal line)
-• Membrane position: slightly retracted (pulled inward)
-• Light reflex: present but may be displaced or abnormal
-• No acute redness or bulging
-• May see air bubbles behind membrane (very specific sign)
- 
-ACUTE OTITIS MEDIA (AOM):
-• HALLMARK: Membrane is BULGING (convex, pushed outward toward viewer)
-• Color: bright red to red-orange, diffuse hyperemia
-• Prominent blood vessels visible on membrane surface
-• Light reflex: ABSENT or distorted/fragmented
-• Effusion visible behind the bulging membrane
-• Membrane appears tense and opaque
-• May have yellowish discharge if perforated
- 
-CHRONIC OTITIS MEDIA (COM / OMK):
-• Often shows prominent vascular engorgement (bright red vessels on membrane)
-• Membrane may appear thickened, opaque, pale-white or hyperemic
-• May show evidence of old/active perforation
-• Granulation tissue possible (red, irregular, friable-looking tissue)
-• Pars flaccida (upper part) may show retraction pocket
-• Canal may have mucoid/purulent discharge
- 
-OTITIS EXTERNA:
-• Canal wall is edematous (swollen, narrowing the canal)
-• Canal skin is red, inflamed
-• Discharge: white/yellow/green in the canal
-• Tympanic membrane itself is usually intact
-• Tragus is tender (cannot assess from image but clinically relevant)
-─────────────────────────────────────────────────────────────────
- 
-========================
-DETAIL LEVEL: {detail_level}
-========================
-short: Findings 2-3 sentences, 2 conditions, 1 sentence each recommendation
-medium: Findings 5-6 sentences, 3 conditions, 2-3 sentences each
-long: Findings 8-10 sentences, 3 conditions, 4-5 sentences each
- 
-========================
-DIAGNOSIS PRIORITY RULES
-========================
-Match what you SEE to the visual signatures above:
- 
-1. CHALK-WHITE PLAQUES on membrane (no bulging, no acute redness)
-   → Primary: Tympanosclerosis/Myringosclerosis
-   → NOT Otitis Media Akut (OMA has bulging + redness, not white plaques)
- 
-2. BULGING membrane + diffuse red/orange color + no light reflex
-   → Primary: Acute Otitis Media (AOM)
-   → Risk: 60-80
- 
-3. Amber/yellow color behind membrane + retracted position
-   → Primary: Otitis Media with Effusion (OME)
-   → Risk: 35-50
- 
-4. Prominent vessels + membrane thickening/opacity ± discharge
-   → Primary: Chronic Otitis Media (COM)
-   → Risk: 50-70
- 
-5. Inflamed canal walls + discharge, membrane intact
-   → Primary: Otitis Externa
-   → Risk: 30-50
- 
-6. Normal gray membrane + sharp light reflex + visible landmarks
-   → Normal: state clearly, risk 0-15
- 
-========================
-BOUNDING BOX RULES
-========================
-Draw boxes around the SPECIFIC abnormal finding:
-- White plaques: box tightly around each chalk patch
-- Bulging area: box the most convex/protruding part
-- Effusion/fluid: box the colored area behind membrane
-- Perforation: box the hole/defect
-- Canal inflammation: box the inflamed canal wall area
-- Cerumen: box the mass
- 
-DO NOT box: normal light reflex, normal malleus, canal walls if clean
-Maximum 5 boxes. Normalized 0.0-1.0. Normal ear: []
- 
-========================
-RISK FACTORS — EXACT KEYS REQUIRED
-========================
-Use EXACTLY these 4 keys (no substitutions):
-"area": specific anatomical location affected (e.g., "Membran timpani quadrant anterior-inferior", "Seluruh permukaan membran timpani", "Liang telinga")
-"region_count": number and type of abnormal findings (e.g., "2 bercak kapur putih", "1 membran bulging difus", "Sumbatan serumen penuh")  
-"intensity": severity (e.g., "Ringan", "Sedang - OMA aktif", "Berat - bulging signifikan dengan hilangnya light reflex")
-"calculation": 2 sentences explaining the score (e.g., "Skor 70 ditetapkan karena membran tampak bulging dengan hiperemis difus dan light reflex tidak terlihat, mengindikasikan AOM aktif. Kondisi ini memerlukan penanganan antibiotik segera.")
- 
-========================
+Analyze this otoscopic image of the ear canal and tympanic membrane (eardrum).
+
+Focus ONLY on visible ear structures: ear canal, tympanic membrane, and any visible middle ear features.
+
+Do NOT analyze:
+- otoscope artifacts (light reflex from instrument is NORMAL — do not flag it as pathology)
+- image vignetting or dark borders
+
+------------------------
+STEP 0 — VISIBILITY CHECK (DO THIS FIRST)
+------------------------
+Before any diagnosis, assess: Is the tympanic membrane VISIBLE?
+
+Check the ear canal:
+- If the canal is filled with dark brown/black/yellow material blocking the view → this is CERUMEN IMPACTION
+- If only partial membrane is visible → state partial view and analyze what is visible
+
+IF CERUMEN IMPACTION (membrane NOT visible):
+- findings: Describe the cerumen — color, consistency (dry/moist), degree of obstruction
+- abnormality: "1. Serumen Prop (penumpukan kotoran telinga)\\n→ Liang telinga tersumbat oleh kotoran telinga yang mengeras, gendang telinga tidak dapat dievaluasi."
+- risk: 15–25 (low — not dangerous but needs removal)
+- bboxes: box around the cerumen mass
+- recommendation approach: Ear irrigation or manual removal by ENT, reassess after clearance
+- DO NOT diagnose any middle ear condition (OMA, effusion, etc.) if membrane is not visible
+- STOP HERE and return JSON immediately
+
+------------------------
+DETAIL LEVEL CONTROL
+------------------------
+The output detail level is: {detail_level}
+
+IF detail_level == "short":
+- Findings: 2–3 sentences
+- Abnormality: 2 conditions
+- Recommendation: 1 sentence per section
+
+IF detail_level == "medium":
+- Findings: 5–6 sentences
+- Abnormality: 3 conditions
+- Recommendation: 2–3 sentences per section
+
+IF detail_level == "long":
+- Findings: 8–10 sentences
+- Abnormality: 3 conditions
+- Recommendation: 4–5 sentences per section
+
+------------------------
+SYSTEMATIC CHECKLIST (only if membrane IS visible)
+------------------------
+1. Tympanic membrane color: pearly gray/white (normal) vs red/yellow/opaque (abnormal)?
+2. Light reflex: present and sharp (normal cone of light) vs absent/distorted?
+3. Membrane position: neutral vs retracted vs bulging?
+4. Perforation: any visible hole or defect?
+5. Fluid/effusion: amber/dark color visible behind membrane?
+6. Ear canal: clean vs inflamed, swollen, discharge present?
+7. Landmarks: malleus handle, umbo visible and normal?
+8. Surface texture: smooth vs granular, vascular, scarred, white chalky plaques?
+
+ASYMMETRY OR ABNORMALITY IN ANY CHECK → describe and diagnose it.
+DO NOT default to "normal" if any check is abnormal.
+
+------------------------
 FINDINGS RULES
-========================
-- Write in professional ENT narrative, flowing sentences
-- State WHAT you see, WHERE it is, and WHAT it means clinically
-- For myringosclerosis: explicitly describe the white plaques, their distribution, and that there are NO signs of acute infection
-- For AOM: describe the bulging, color, absent light reflex
-- For COM: describe the vascular pattern, any discharge or perforation signs
-- For cerumen: describe what fills the canal and that the membrane cannot be assessed
- 
-========================
+------------------------
+- Write in professional ENT/otolaryngology narrative style
+- Use flowing sentences (NOT bullet points)
+- Systematically cover all 8 checklist items
+
+Normal case:
+- State tympanic membrane appears normal
+- Confirm sharp light reflex and intact landmarks
+- Avoid uncertainty language
+
+------------------------
+ABNORMALITY RULES
+------------------------
+List 1–3 most likely conditions. PRIORITY: the condition most consistent with visual appearance goes FIRST.
+
+Priority guide:
+- White/chalky plaques on membrane → Tympanosclerosis FIRST (not OMA)
+- Canal fully filled brown/black → Cerumen Impaction FIRST (do NOT diagnose middle ear)
+- Bulging red/opaque membrane → OMA FIRST
+- Amber/yellow color behind membrane → Effusion FIRST
+- Red inflamed canal, intact membrane → Otitis Externa FIRST
+
+Format:
+1. [Condition name] ([Indonesian explanation])
+→ Simple explanation in Bahasa Indonesia
+
+If normal: "Tidak ditemukan kelainan signifikan pada membran timpani dan liang telinga"
+
+------------------------
+BOUNDING BOX RULES
+------------------------
+- Box ALL visible abnormal regions
+- Maximum 5 boxes
+- Box: perforation, bulging, white plaques, cerumen, discharge, inflammation
+- DO NOT box the normal light reflex cone
+- Normalized coordinates 0.0–1.0
+- If normal: []
+
+------------------------
+RISK ESTIMATION
+------------------------
+Range: 0–100
+- Normal: 0–15
+- Cerumen impaction only: 15–25
+- Mild retraction / minor scarring / tympanosclerosis: 20–35
+- Effusion without active infection: 35–50
+- AOM with bulging membrane: 55–75
+- Large perforation / cholesteatoma: 75–90
+
+Explain the score basis clearly in "calculation".
+
+------------------------
+RISK FACTORS FORMAT — CRITICAL
+------------------------
+You MUST use EXACTLY these 4 keys. No other keys allowed:
+
+"area": The specific anatomical area affected.
+  Examples: "Membran timpani anterior-inferior", "Seluruh liang telinga", "Membran timpani posterior-superior", "Tidak ada area abnormal"
+
+"region_count": Number and description of abnormal regions.
+  Examples: "2 bercak putih pada membran", "1 massa serumen menutupi seluruh kanal", "Tidak ada", "3 area hiperemis"
+
+"intensity": Severity level with brief description.
+  Examples: "Ringan - bercak kecil tanpa tanda infeksi", "Sedang - inflamasi aktif", "Berat - membran timpani tidak terlihat"
+
+"calculation": 1–2 sentences explaining HOW the risk score number was derived.
+  Example: "Skor 65 ditetapkan karena ditemukan membran timpani yang menonjol (bulging) disertai kemerahan difus, mengindikasikan OMA aktif yang memerlukan penanganan segera."
+
+NEVER leave any of these 4 fields as "-" or empty. Always provide descriptive content.
+
+------------------------
+RECOMMENDATION RULES
+------------------------
+For ENT/primary care professionals. Formal clinical tone.
+
+1. Approach: clinical correlation (otalgia, hearing loss, duration, fever, discharge history), audiometry/tympanometry if indicated, follow-up interval
+2. Treatment: specific management — antibiotics if bacterial OMA, cerumen removal technique, ear drops for OE, ENT referral if needed
+
+------------------------
 OUTPUT FORMAT
-========================
-Return ONLY valid JSON. No markdown, no explanation, no text after the closing brace.
- 
+------------------------
+Return ONLY valid JSON. No explanation, no markdown, no trailing text after the closing brace.
+
 {{
   "findings": "...",
   "abnormality": "...",
