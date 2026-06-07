@@ -36,6 +36,9 @@ export default function DiagnosisPage() {
   const [memoryChecks, setMemoryChecks] = useState(null);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
 
+  // ✅ Snapshot hasil giliran sebelumnya — ini kunci lapisan 1
+  const [lastSnapshot, setLastSnapshot] = useState(null);
+
   const memoryCount = memoryChecks
     ? [
         ...(memoryChecks.icd10 || []),
@@ -45,10 +48,6 @@ export default function DiagnosisPage() {
 
   useEffect(() => {
     if (aiResult) {
-      setMemoryChecks({
-        icd10: (aiResult.icd10 || []).map(() => true),
-        rekomendasi: (aiResult.rekomendasi || []).map(() => true),
-      });
       setShowMemoryPanel(false);
       setTimeout(
         () => bottomRef.current?.scrollIntoView({ behavior: "smooth" }),
@@ -58,50 +57,60 @@ export default function DiagnosisPage() {
   }, [aiResult]);
 
   // =============================================
-  // Helper: bangun history terfilter berdasarkan checkbox
-  // Dipakai oleh handleAnalisis DAN handleUlangi
-  // =============================================
-  const buildFilteredHistory = (currentForm) => {
-    if (!aiResult || !memoryChecks) return conversationHistory;
-
-    const selectedIcd = (aiResult.icd10 || [])
-      .filter((_, i) => memoryChecks.icd10[i])
-      .map((x) => `${x.kode} - ${x.label}`)
-      .join(", ");
-
-    const selectedRek = (aiResult.rekomendasi || [])
-      .filter((_, i) => memoryChecks.rekomendasi[i])
-      .join("; ");
-
-    const assistantSummary = [
-      `Diagnosis: ${aiResult.penyakit}`,
-      selectedIcd ? `ICD-10: ${selectedIcd}` : null,
-      selectedRek ? `Rekomendasi: ${selectedRek}` : null,
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    return [
-      ...conversationHistory,
-      {
-        user: `Keluhan: ${currentForm.keluhan}. Gejala: ${currentForm.gejala || "-"}`,
-        assistant: assistantSummary || "Tidak ada poin dipilih.",
-      },
-    ];
-  };
-
-  // =============================================
   // Analisis utama
   // =============================================
   const handleAnalisis = async () => {
     if (!formData.keluhan) return alert("Keluhan utama harus diisi!");
 
-    // Snapshot form sebelum analisis untuk disimpan ke history
+    console.log("=== DEBUG lastSnapshot saat klik ===");
+    console.log("lastSnapshot:", lastSnapshot);
+    console.log("conversationHistory:", conversationHistory);
+    console.log("====================================");
+
     const formSnapshot = { ...formData };
 
-    // Bangun history dengan filter checkbox dari hasil sebelumnya
-    const historyToSend = buildFilteredHistory(formSnapshot);
+    // ✅ Bangun history dari lastSnapshot (hasil giliran sebelumnya)
+    let historyToSend = [...conversationHistory];
 
+    if (lastSnapshot) {
+      const {
+        aiResult: prevResult,
+        memoryChecks: prevChecks,
+        formInput: prevForm,
+      } = lastSnapshot;
+
+      const selectedIcd = (prevResult.icd10 || [])
+        .filter((_, i) => prevChecks.icd10[i])
+        .map((x) => `${x.kode} - ${x.label}`)
+        .join(", ");
+
+      const selectedRek = (prevResult.rekomendasi || [])
+        .filter((_, i) => prevChecks.rekomendasi[i])
+        .join("; ");
+
+      const assistantSummary = [
+        `Diagnosis: ${prevResult.penyakit}`,
+        selectedIcd ? `ICD-10: ${selectedIcd}` : null,
+        selectedRek ? `Rekomendasi: ${selectedRek}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      historyToSend = [
+        ...conversationHistory,
+        {
+          user: `Keluhan: ${prevForm.keluhan}. Gejala: ${prevForm.gejala || "-"}`,
+          assistant: assistantSummary,
+        },
+      ];
+    }
+
+    console.log("=== HISTORY YANG DIKIRIM ===");
+    console.log(JSON.stringify(historyToSend, null, 2));
+    console.log("============================");
+
+    setConversationHistory(historyToSend);
+    setLastSnapshot(null);
     setIsLoading(true);
     setAiResult(null);
     setMemoryChecks(null);
@@ -132,6 +141,19 @@ export default function DiagnosisPage() {
 
       if (!response.ok) throw new Error("Gagal terhubung ke server backend");
       const data = await response.json();
+
+      // ✅ Simpan snapshot lengkap untuk giliran berikutnya
+      const initialChecks = {
+        icd10: (data.icd10 || []).map(() => true),
+        rekomendasi: (data.rekomendasi || []).map(() => true),
+      };
+      setMemoryChecks(initialChecks);
+      setLastSnapshot({
+        aiResult: data,
+        memoryChecks: initialChecks,
+        formInput: formSnapshot,
+      });
+
       setAiResult(data);
 
       if (data.db_patient_id) {
@@ -146,9 +168,6 @@ export default function DiagnosisPage() {
           localStorage.setItem("clinic_patients", JSON.stringify(updated));
         } catch {}
       }
-
-      // Update history untuk giliran berikutnya
-      setConversationHistory(historyToSend);
     } catch (err) {
       console.error(err);
       alert("Terjadi kesalahan sistem: " + err.message);
@@ -158,18 +177,16 @@ export default function DiagnosisPage() {
   };
 
   // =============================================
-  // Ulangi diagnosis — pakai selective memory yang sama
+  // Ulangi diagnosis — pakai lastSnapshot yang sama
   // =============================================
   const handleUlangi = async () => {
     if (!formData.keluhan) return alert("Keluhan utama harus diisi!");
 
-    setAiResult(null);
-    setMemoryChecks(null);
-    setSavedSuccess(false);
     setIsLoading(true);
+    setSavedSuccess(false);
 
-    // Gunakan buildFilteredHistory yang sama seperti handleAnalisis
-    const historyToSend = buildFilteredHistory({ ...formData });
+    // Pakai history yang sudah ada, tidak tambah snapshot baru
+    const historyToSend = [...conversationHistory];
 
     try {
       const response = await fetch("http://localhost:8000/api/analyze", {
@@ -195,6 +212,17 @@ export default function DiagnosisPage() {
       });
       if (!response.ok) throw new Error("Gagal");
       const data = await response.json();
+
+      const initialChecks = {
+        icd10: (data.icd10 || []).map(() => true),
+        rekomendasi: (data.rekomendasi || []).map(() => true),
+      };
+      setMemoryChecks(initialChecks);
+      setLastSnapshot({
+        aiResult: data,
+        memoryChecks: initialChecks,
+        formInput: { ...formData },
+      });
       setAiResult(data);
     } catch (err) {
       alert("Terjadi kesalahan: " + err.message);
@@ -235,6 +263,7 @@ export default function DiagnosisPage() {
       setFormData(EMPTY_FORM);
       setAiResult(null);
       setMemoryChecks(null);
+      setLastSnapshot(null);
     } catch (e) {
       alert("Gagal menyimpan: " + e.message);
     } finally {
@@ -255,7 +284,31 @@ export default function DiagnosisPage() {
     setFormData(EMPTY_FORM);
     setAiResult(null);
     setMemoryChecks(null);
+    setLastSnapshot(null);
     setSavedSuccess(false);
+  };
+
+  // =============================================
+  // Update memoryChecks + sync ke lastSnapshot
+  // =============================================
+  const updateIcd10Check = (idx) => {
+    const updated = [...memoryChecks.icd10];
+    updated[idx] = !updated[idx];
+    const newChecks = { ...memoryChecks, icd10: updated };
+    setMemoryChecks(newChecks);
+    setLastSnapshot((prev) =>
+      prev ? { ...prev, memoryChecks: newChecks } : null,
+    );
+  };
+
+  const updateRekomendasiCheck = (idx) => {
+    const updated = [...memoryChecks.rekomendasi];
+    updated[idx] = !updated[idx];
+    const newChecks = { ...memoryChecks, rekomendasi: updated };
+    setMemoryChecks(newChecks);
+    setLastSnapshot((prev) =>
+      prev ? { ...prev, memoryChecks: newChecks } : null,
+    );
   };
 
   return (
@@ -289,7 +342,7 @@ export default function DiagnosisPage() {
           )}
           {conversationHistory.length > 0 && (
             <div className="text-xs text-gray-400 border border-gray-200 px-3 py-2 rounded-lg flex items-center">
-              💬 {conversationHistory.length} konteks sesi ini
+              💬 {conversationHistory.length} giliran tersimpan
             </div>
           )}
           <button
@@ -336,7 +389,7 @@ export default function DiagnosisPage() {
                 className="text-xs bg-amber-50 border border-amber-100 rounded-lg p-2"
               >
                 <span className="font-semibold text-blue-600">
-                  Dokter #{idx + 1}:
+                  Giliran #{idx + 1}:
                 </span>{" "}
                 <span className="text-gray-600">
                   {turn.user.length > 100
@@ -361,7 +414,6 @@ export default function DiagnosisPage() {
             <h4 className="font-semibold text-blue-700 bg-blue-50 p-2 rounded text-sm">
               1. Anamnesis
             </h4>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Keluhan Utama <span className="text-red-500">*</span>
@@ -376,7 +428,6 @@ export default function DiagnosisPage() {
                 }
               />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Gejala Tambahan{" "}
@@ -394,7 +445,6 @@ export default function DiagnosisPage() {
                 }
               />
             </div>
-
             <h4 className="font-semibold text-orange-700 bg-orange-50 p-2 rounded text-sm mt-2">
               3. Riwayat Pasien
             </h4>
@@ -443,7 +493,6 @@ export default function DiagnosisPage() {
             <h4 className="font-semibold text-emerald-700 bg-emerald-50 p-2 rounded text-sm">
               2. Pemeriksaan Fisik & Penunjang
             </h4>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Tanda Vital{" "}
@@ -462,7 +511,6 @@ export default function DiagnosisPage() {
                 }
               />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Hasil Laboratorium{" "}
@@ -480,7 +528,6 @@ export default function DiagnosisPage() {
                 }
               />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1 mt-2">
                 Catatan Tambahan Medis{" "}
@@ -552,7 +599,7 @@ export default function DiagnosisPage() {
                 </p>
               </div>
 
-              {/* ICD-10 — Kolom Terpisah */}
+              {/* ICD-10 */}
               <div className="bg-purple-50 border border-purple-200 p-5 rounded-xl shadow-inner">
                 <h4 className="font-bold text-purple-800 mb-3 flex items-center gap-2">
                   <span className="bg-purple-100 p-1.5 rounded-lg text-sm">
@@ -597,7 +644,7 @@ export default function DiagnosisPage() {
               </div>
             </div>
 
-            {/* Tanda Bahaya — Full Width */}
+            {/* Tanda Bahaya */}
             {aiResult.tanda_bahaya && (
               <div className="bg-red-100 border-2 border-red-400 p-5 rounded-xl">
                 <h4 className="font-bold text-red-800 mb-2 flex items-center gap-2">
@@ -642,14 +689,7 @@ export default function DiagnosisPage() {
                             <input
                               type="checkbox"
                               checked={memoryChecks.icd10[idx] || false}
-                              onChange={() => {
-                                const updated = [...memoryChecks.icd10];
-                                updated[idx] = !updated[idx];
-                                setMemoryChecks({
-                                  ...memoryChecks,
-                                  icd10: updated,
-                                });
-                              }}
+                              onChange={() => updateIcd10Check(idx)}
                               className="mt-0.5 accent-purple-600 w-4 h-4 flex-shrink-0"
                             />
                             <span className="text-xs text-gray-700">
@@ -662,7 +702,6 @@ export default function DiagnosisPage() {
                         ))}
                       </div>
                     </div>
-
                     <div>
                       <p className="text-xs font-bold text-emerald-700 uppercase tracking-wide mb-2">
                         Rekomendasi Terapi
@@ -676,14 +715,7 @@ export default function DiagnosisPage() {
                             <input
                               type="checkbox"
                               checked={memoryChecks.rekomendasi[idx] || false}
-                              onChange={() => {
-                                const updated = [...memoryChecks.rekomendasi];
-                                updated[idx] = !updated[idx];
-                                setMemoryChecks({
-                                  ...memoryChecks,
-                                  rekomendasi: updated,
-                                });
-                              }}
+                              onChange={() => updateRekomendasiCheck(idx)}
                               className="mt-0.5 accent-emerald-600 w-4 h-4 flex-shrink-0"
                             />
                             <span className="text-xs text-gray-700 leading-relaxed">
