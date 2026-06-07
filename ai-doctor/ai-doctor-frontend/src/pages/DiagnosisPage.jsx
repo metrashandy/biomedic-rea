@@ -27,18 +27,19 @@ export default function DiagnosisPage() {
   const [aiResult, setAiResult] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  // ID pasien di DB — bisa beda dari patient.id (localStorage) untuk pasien baru
   const [dbPatientId, setDbPatientId] = useState(patient.id || null);
 
-  // Riwayat percakapan dalam satu sesi
+  // Riwayat percakapan dalam satu sesi (selective memory)
+  // [ { user: string, assistant: string } ]
   const [conversationHistory, setConversationHistory] = useState([]);
 
-  // Selective memory: checkbox per poin hasil AI
+  // Untuk selective memory: checkbox per poin hasil AI
+  // { icd10: [bool], rekomendasi: [bool] }
   const [memoryChecks, setMemoryChecks] = useState(null);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
 
-  // ✅ Snapshot hasil giliran sebelumnya — ini kunci lapisan 1
-  const [lastSnapshot, setLastSnapshot] = useState(null);
-
+  // Jumlah poin aktif di memori
   const memoryCount = memoryChecks
     ? [
         ...(memoryChecks.icd10 || []),
@@ -46,8 +47,13 @@ export default function DiagnosisPage() {
       ].filter(Boolean).length
     : 0;
 
+  // Setiap ada hasil baru, init checkbox semua true
   useEffect(() => {
     if (aiResult) {
+      setMemoryChecks({
+        icd10: (aiResult.icd10 || []).map(() => true),
+        rekomendasi: (aiResult.rekomendasi || []).map(() => true),
+      });
       setShowMemoryPanel(false);
       setTimeout(
         () => bottomRef.current?.scrollIntoView({ behavior: "smooth" }),
@@ -57,136 +63,75 @@ export default function DiagnosisPage() {
   }, [aiResult]);
 
   // =============================================
-  // Analisis utama
+  // Build conversation history untuk dikirim ke API
+  // Hanya poin yang dicentang
+  // =============================================
+  const buildHistoryToSend = () => {
+    if (!aiResult || !memoryChecks) return conversationHistory;
+
+    const selectedIcd = (aiResult.icd10 || [])
+      .filter((_, i) => memoryChecks.icd10[i])
+      .map((x) => `${x.kode} - ${x.label}`)
+      .join(", ");
+
+    const selectedRek = (aiResult.rekomendasi || [])
+      .filter((_, i) => memoryChecks.rekomendasi[i])
+      .join("; ");
+
+    const assistantSummary = [
+      `Diagnosis: ${aiResult.penyakit}`,
+      selectedIcd ? `ICD-10: ${selectedIcd}` : null,
+      selectedRek ? `Rekomendasi: ${selectedRek}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const lastUser = `Keluhan: ${formData.keluhan || "(sebelumnya)"}. Gejala: ${formData.gejala || ""}`;
+
+    // Kalau sudah ada history, tambahkan turn terakhir
+    // Tapi kita simpan history sebelum analisis, jadi ini sudah beres di handleAnalisis
+    return conversationHistory;
+  };
+
+  // =============================================
+  // Analisis
   // =============================================
   const handleAnalisis = async () => {
-    if (!formData.keluhan) return alert("Keluhan utama harus diisi!");
+    if (!formData.keluhan || !formData.gejala)
+      return alert("Keluhan utama dan gejala harus diisi!");
 
-    console.log("=== DEBUG lastSnapshot saat klik ===");
-    console.log("lastSnapshot:", lastSnapshot);
-    console.log("conversationHistory:", conversationHistory);
-    console.log("====================================");
-
-    const formSnapshot = { ...formData };
-
-    // ✅ Bangun history dari lastSnapshot (hasil giliran sebelumnya)
+    // Sebelum analisis baru, simpan hasil SEBELUMNYA ke history (dengan filter checkbox)
     let historyToSend = [...conversationHistory];
-
-    if (lastSnapshot) {
-      const {
-        aiResult: prevResult,
-        memoryChecks: prevChecks,
-        formInput: prevForm,
-      } = lastSnapshot;
-
-      const selectedIcd = (prevResult.icd10 || [])
-        .filter((_, i) => prevChecks.icd10[i])
+    if (aiResult && memoryChecks) {
+      const selectedIcd = (aiResult.icd10 || [])
+        .filter((_, i) => memoryChecks.icd10[i])
         .map((x) => `${x.kode} - ${x.label}`)
         .join(", ");
-
-      const selectedRek = (prevResult.rekomendasi || [])
-        .filter((_, i) => prevChecks.rekomendasi[i])
+      const selectedRek = (aiResult.rekomendasi || [])
+        .filter((_, i) => memoryChecks.rekomendasi[i])
         .join("; ");
-
       const assistantSummary = [
-        `Diagnosis: ${prevResult.penyakit}`,
+        `Diagnosis: ${aiResult.penyakit}`,
         selectedIcd ? `ICD-10: ${selectedIcd}` : null,
         selectedRek ? `Rekomendasi: ${selectedRek}` : null,
       ]
         .filter(Boolean)
         .join("\n");
 
+      // Ambil keluhan dari form sebelumnya (snapshot)
       historyToSend = [
         ...conversationHistory,
         {
-          user: `Keluhan: ${prevForm.keluhan}. Gejala: ${prevForm.gejala || "-"}`,
-          assistant: assistantSummary,
+          user: `Keluhan: ${formData.keluhan}. Gejala: ${formData.gejala}`,
+          assistant: assistantSummary || "Tidak ada poin dipilih.",
         },
       ];
     }
 
-    console.log("=== HISTORY YANG DIKIRIM ===");
-    console.log(JSON.stringify(historyToSend, null, 2));
-    console.log("============================");
-
-    setConversationHistory(historyToSend);
-    setLastSnapshot(null);
     setIsLoading(true);
     setAiResult(null);
     setMemoryChecks(null);
     setSavedSuccess(false);
-
-    try {
-      const response = await fetch("http://localhost:8000/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          patient_id: dbPatientId || null,
-          name: patient.name,
-          age: parseInt(patient.age),
-          gender: patient.gender,
-          weight: patient.weight ? parseFloat(patient.weight) : null,
-          height: patient.height ? parseFloat(patient.height) : null,
-          keluhan: formSnapshot.keluhan,
-          gejala: formSnapshot.gejala,
-          tandaVital: formSnapshot.tandaVital,
-          hasilLab: formSnapshot.hasilLab,
-          alergi: formSnapshot.alergi,
-          riwayat: formSnapshot.riwayat,
-          catatan: formSnapshot.catatan,
-          save_visit: false,
-          conversation_history: historyToSend,
-        }),
-      });
-
-      if (!response.ok) throw new Error("Gagal terhubung ke server backend");
-      const data = await response.json();
-
-      // ✅ Simpan snapshot lengkap untuk giliran berikutnya
-      const initialChecks = {
-        icd10: (data.icd10 || []).map(() => true),
-        rekomendasi: (data.rekomendasi || []).map(() => true),
-      };
-      setMemoryChecks(initialChecks);
-      setLastSnapshot({
-        aiResult: data,
-        memoryChecks: initialChecks,
-        formInput: formSnapshot,
-      });
-
-      setAiResult(data);
-
-      if (data.db_patient_id) {
-        setDbPatientId(data.db_patient_id);
-        try {
-          const stored = JSON.parse(
-            localStorage.getItem("clinic_patients") || "[]",
-          );
-          const updated = stored.map((p) =>
-            p.id === patient.id ? { ...p, id: data.db_patient_id } : p,
-          );
-          localStorage.setItem("clinic_patients", JSON.stringify(updated));
-        } catch {}
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Terjadi kesalahan sistem: " + err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // =============================================
-  // Ulangi diagnosis — pakai lastSnapshot yang sama
-  // =============================================
-  const handleUlangi = async () => {
-    if (!formData.keluhan) return alert("Keluhan utama harus diisi!");
-
-    setIsLoading(true);
-    setSavedSuccess(false);
-
-    // Pakai history yang sudah ada, tidak tambah snapshot baru
-    const historyToSend = [...conversationHistory];
 
     try {
       const response = await fetch("http://localhost:8000/api/analyze", {
@@ -210,22 +155,28 @@ export default function DiagnosisPage() {
           conversation_history: historyToSend,
         }),
       });
-      if (!response.ok) throw new Error("Gagal");
-      const data = await response.json();
 
-      const initialChecks = {
-        icd10: (data.icd10 || []).map(() => true),
-        rekomendasi: (data.rekomendasi || []).map(() => true),
-      };
-      setMemoryChecks(initialChecks);
-      setLastSnapshot({
-        aiResult: data,
-        memoryChecks: initialChecks,
-        formInput: { ...formData },
-      });
+      if (!response.ok) throw new Error("Gagal terhubung ke server backend");
+      const data = await response.json();
       setAiResult(data);
+      // Sinkron ID DB ke state dan localStorage
+      if (data.db_patient_id) {
+        setDbPatientId(data.db_patient_id);
+        try {
+          const stored = JSON.parse(
+            localStorage.getItem("clinic_patients") || "[]",
+          );
+          const updated = stored.map((p) =>
+            p.id === patient.id ? { ...p, id: data.db_patient_id } : p,
+          );
+          localStorage.setItem("clinic_patients", JSON.stringify(updated));
+        } catch {}
+      }
+      // Update history untuk giliran berikutnya
+      setConversationHistory(historyToSend);
     } catch (err) {
-      alert("Terjadi kesalahan: " + err.message);
+      console.error(err);
+      alert("Terjadi kesalahan sistem: " + err.message);
     } finally {
       setIsLoading(false);
     }
@@ -257,13 +208,22 @@ export default function DiagnosisPage() {
           catatan: formData.catatan,
           save_visit: true,
           conversation_history: [],
+          // Kirim pilihan dokter dari checkbox selective memory
+          icd10_terpilih: memoryChecks
+            ? (aiResult.icd10 || []).filter((_, i) => memoryChecks.icd10[i])
+            : aiResult.icd10 || [],
+          rekomendasi_terpilih: memoryChecks
+            ? (aiResult.rekomendasi || []).filter(
+                (_, i) => memoryChecks.rekomendasi[i],
+              )
+            : aiResult.rekomendasi || [],
         }),
       });
       setSavedSuccess(true);
+      // Reset form & hasil setelah simpan
       setFormData(EMPTY_FORM);
       setAiResult(null);
       setMemoryChecks(null);
-      setLastSnapshot(null);
     } catch (e) {
       alert("Gagal menyimpan: " + e.message);
     } finally {
@@ -272,8 +232,49 @@ export default function DiagnosisPage() {
   };
 
   // =============================================
-  // Sesi baru — reset semua state
+  // Ulangi diagnosis (analisis ulang, tanpa simpan ke DB)
   // =============================================
+  const handleUlangi = async () => {
+    if (!formData.keluhan || !formData.gejala)
+      return alert("Keluhan utama dan gejala harus diisi!");
+    setAiResult(null);
+    setMemoryChecks(null);
+    setSavedSuccess(false);
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("http://localhost:8000/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patient_id: dbPatientId || null,
+          name: patient.name,
+          age: parseInt(patient.age),
+          gender: patient.gender,
+          weight: patient.weight ? parseFloat(patient.weight) : null,
+          height: patient.height ? parseFloat(patient.height) : null,
+          keluhan: formData.keluhan,
+          gejala: formData.gejala,
+          tandaVital: formData.tandaVital,
+          hasilLab: formData.hasilLab,
+          alergi: formData.alergi,
+          riwayat: formData.riwayat,
+          catatan: formData.catatan,
+          save_visit: false,
+          conversation_history: conversationHistory,
+        }),
+      });
+      if (!response.ok) throw new Error("Gagal");
+      const data = await response.json();
+      setAiResult(data);
+    } catch (err) {
+      alert("Terjadi kesalahan: " + err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // New session
   const handleNewSession = () => {
     if (
       conversationHistory.length > 0 &&
@@ -284,32 +285,10 @@ export default function DiagnosisPage() {
     setFormData(EMPTY_FORM);
     setAiResult(null);
     setMemoryChecks(null);
-    setLastSnapshot(null);
     setSavedSuccess(false);
   };
 
-  // =============================================
-  // Update memoryChecks + sync ke lastSnapshot
-  // =============================================
-  const updateIcd10Check = (idx) => {
-    const updated = [...memoryChecks.icd10];
-    updated[idx] = !updated[idx];
-    const newChecks = { ...memoryChecks, icd10: updated };
-    setMemoryChecks(newChecks);
-    setLastSnapshot((prev) =>
-      prev ? { ...prev, memoryChecks: newChecks } : null,
-    );
-  };
-
-  const updateRekomendasiCheck = (idx) => {
-    const updated = [...memoryChecks.rekomendasi];
-    updated[idx] = !updated[idx];
-    const newChecks = { ...memoryChecks, rekomendasi: updated };
-    setMemoryChecks(newChecks);
-    setLastSnapshot((prev) =>
-      prev ? { ...prev, memoryChecks: newChecks } : null,
-    );
-  };
+  const hasResult = !!aiResult;
 
   return (
     <div className="min-h-screen bg-gray-100 p-6 max-w-6xl mx-auto flex flex-col gap-6">
@@ -335,14 +314,16 @@ export default function DiagnosisPage() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {/* Badge memori aktif */}
           {memoryCount > 0 && (
             <div className="flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-3 py-2 rounded-lg">
               🧠 {memoryCount} poin dalam memori
             </div>
           )}
+          {/* Sesi */}
           {conversationHistory.length > 0 && (
             <div className="text-xs text-gray-400 border border-gray-200 px-3 py-2 rounded-lg flex items-center">
-              💬 {conversationHistory.length} giliran tersimpan
+              💬 {conversationHistory.length} konteks sesi ini
             </div>
           )}
           <button
@@ -373,35 +354,6 @@ export default function DiagnosisPage() {
         </div>
       </div>
 
-      {/* ===== RINGKASAN SESI AKTIF ===== */}
-      {conversationHistory.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-amber-400">
-          <p className="text-sm font-bold text-amber-700 mb-3 flex items-center gap-2">
-            🧠 Konteks Sesi Aktif
-            <span className="font-normal text-amber-600 text-xs">
-              ({conversationHistory.length} giliran tersimpan dalam memori)
-            </span>
-          </p>
-          <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
-            {conversationHistory.map((turn, idx) => (
-              <div
-                key={idx}
-                className="text-xs bg-amber-50 border border-amber-100 rounded-lg p-2"
-              >
-                <span className="font-semibold text-blue-600">
-                  Giliran #{idx + 1}:
-                </span>{" "}
-                <span className="text-gray-600">
-                  {turn.user.length > 100
-                    ? turn.user.slice(0, 100) + "..."
-                    : turn.user}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* ===== FORM INPUT ===== */}
       <div className="bg-white rounded-xl shadow-sm p-6">
         <h3 className="text-lg font-bold text-gray-800 border-b pb-3 mb-5">
@@ -416,7 +368,7 @@ export default function DiagnosisPage() {
             </h4>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Keluhan Utama <span className="text-red-500">*</span>
+                Keluhan Utama *
               </label>
               <textarea
                 className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:border-blue-500 min-h-[80px] disabled:bg-gray-50 disabled:text-gray-400"
@@ -430,14 +382,11 @@ export default function DiagnosisPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Gejala Tambahan{" "}
-                <span className="text-gray-400 font-normal text-xs">
-                  (opsional — semakin lengkap semakin akurat)
-                </span>
+                Gejala Tambahan *
               </label>
               <textarea
                 className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:border-blue-500 min-h-[80px] disabled:bg-gray-50 disabled:text-gray-400"
-                placeholder="Contoh: Demam ringan, badan pegal-pegal, tidak nafsu makan..."
+                placeholder="Contoh: Demam ringan, badan pegal-pegal..."
                 value={formData.gejala}
                 disabled={isLoading}
                 onChange={(e) =>
@@ -451,10 +400,7 @@ export default function DiagnosisPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Alergi{" "}
-                  <span className="text-gray-400 font-normal text-xs">
-                    (opsional)
-                  </span>
+                  Alergi
                 </label>
                 <input
                   type="text"
@@ -469,15 +415,12 @@ export default function DiagnosisPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Riwayat Penyakit{" "}
-                  <span className="text-gray-400 font-normal text-xs">
-                    (opsional)
-                  </span>
+                  Riwayat Penyakit
                 </label>
                 <input
                   type="text"
                   className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:border-orange-500 disabled:bg-gray-50"
-                  placeholder="Contoh: Asma, Hipertensi"
+                  placeholder="Contoh: Asma"
                   value={formData.riwayat}
                   disabled={isLoading}
                   onChange={(e) =>
@@ -495,15 +438,12 @@ export default function DiagnosisPage() {
             </h4>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tanda Vital{" "}
-                <span className="text-gray-400 font-normal text-xs">
-                  (opsional — sangat dianjurkan)
-                </span>
+                Tanda Vital (TD, Nadi, Suhu, RR)
               </label>
               <input
                 type="text"
                 className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:border-emerald-500 disabled:bg-gray-50"
-                placeholder="Contoh: TD: 120/80, Nadi: 80x, Suhu: 38°C, RR: 20x"
+                placeholder="Contoh: TD: 120/80, Nadi: 80x, Suhu: 38C, RR: 20x"
                 value={formData.tandaVital}
                 disabled={isLoading}
                 onChange={(e) =>
@@ -513,14 +453,11 @@ export default function DiagnosisPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Hasil Laboratorium{" "}
-                <span className="text-gray-400 font-normal text-xs">
-                  (opsional)
-                </span>
+                Hasil Laboratorium (Opsional)
               </label>
               <textarea
                 className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:border-emerald-500 min-h-[80px] disabled:bg-gray-50"
-                placeholder="Contoh: Leukosit 15.000, Hb 12.5, Trombosit 90.000..."
+                placeholder="Contoh: Leukosit 15.000, Hb 12.5..."
                 value={formData.hasilLab}
                 disabled={isLoading}
                 onChange={(e) =>
@@ -530,14 +467,11 @@ export default function DiagnosisPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1 mt-2">
-                Catatan Tambahan Medis{" "}
-                <span className="text-gray-400 font-normal text-xs">
-                  (opsional)
-                </span>
+                Catatan Tambahan Medis
               </label>
               <textarea
                 className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:border-gray-500 min-h-[80px] disabled:bg-gray-50"
-                placeholder="Observasi visual, kondisi umum pasien, atau info lain..."
+                placeholder="Observasi visual atau info lain dari pasien..."
                 value={formData.catatan}
                 disabled={isLoading}
                 onChange={(e) =>
@@ -584,14 +518,14 @@ export default function DiagnosisPage() {
           </div>
         ) : aiResult ? (
           <div className="flex flex-col gap-5">
-            {/* 3 Kolom Hasil Utama */}
+            {/* 3 Kolom Hasil */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               {/* Diagnosis */}
               <div className="bg-red-50 border border-red-200 p-5 rounded-xl shadow-inner">
                 <h4 className="font-bold text-red-800 mb-3 flex items-center gap-2">
                   <span className="bg-red-100 p-1.5 rounded-lg text-sm">
                     🔍
-                  </span>
+                  </span>{" "}
                   Kemungkinan Diagnosis
                 </h4>
                 <p className="text-red-900 text-sm leading-relaxed">
@@ -599,18 +533,18 @@ export default function DiagnosisPage() {
                 </p>
               </div>
 
-              {/* ICD-10 */}
+              {/* ICD-10 — Kolom Terpisah */}
               <div className="bg-purple-50 border border-purple-200 p-5 rounded-xl shadow-inner">
                 <h4 className="font-bold text-purple-800 mb-3 flex items-center gap-2">
                   <span className="bg-purple-100 p-1.5 rounded-lg text-sm">
                     📋
-                  </span>
+                  </span>{" "}
                   Kode ICD-10
                 </h4>
                 <div className="space-y-2">
                   {(aiResult.icd10 || []).map((item, idx) => (
                     <div key={idx} className="flex items-start gap-2">
-                      <span className="font-mono font-bold text-purple-700 text-sm mt-0.5 bg-purple-100 px-2 py-0.5 rounded flex-shrink-0">
+                      <span className="font-mono font-bold text-purple-700 text-sm mt-0.5 bg-purple-100 px-2 py-0.5 rounded">
                         {item.kode}
                       </span>
                       <span className="text-purple-900 text-xs leading-relaxed">
@@ -631,7 +565,7 @@ export default function DiagnosisPage() {
                 <h4 className="font-bold text-emerald-800 mb-3 flex items-center gap-2">
                   <span className="bg-emerald-100 p-1.5 rounded-lg text-sm">
                     💊
-                  </span>
+                  </span>{" "}
                   Rekomendasi Terapi
                 </h4>
                 <ul className="list-disc pl-4 text-emerald-900 space-y-1.5 text-sm">
@@ -643,21 +577,6 @@ export default function DiagnosisPage() {
                 </ul>
               </div>
             </div>
-
-            {/* Tanda Bahaya */}
-            {aiResult.tanda_bahaya && (
-              <div className="bg-red-100 border-2 border-red-400 p-5 rounded-xl">
-                <h4 className="font-bold text-red-800 mb-2 flex items-center gap-2">
-                  <span className="bg-red-200 p-1.5 rounded-lg text-sm">
-                    ⚠️
-                  </span>
-                  Tanda Bahaya & Indikasi Rujukan Segera
-                </h4>
-                <p className="text-red-900 text-sm leading-relaxed">
-                  {aiResult.tanda_bahaya}
-                </p>
-              </div>
-            )}
 
             {/* Selective Memory Panel */}
             {memoryChecks && (
@@ -676,6 +595,7 @@ export default function DiagnosisPage() {
 
                 {showMemoryPanel && (
                   <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Checkbox ICD-10 */}
                     <div>
                       <p className="text-xs font-bold text-purple-700 uppercase tracking-wide mb-2">
                         Kode ICD-10
@@ -689,7 +609,14 @@ export default function DiagnosisPage() {
                             <input
                               type="checkbox"
                               checked={memoryChecks.icd10[idx] || false}
-                              onChange={() => updateIcd10Check(idx)}
+                              onChange={() => {
+                                const updated = [...memoryChecks.icd10];
+                                updated[idx] = !updated[idx];
+                                setMemoryChecks({
+                                  ...memoryChecks,
+                                  icd10: updated,
+                                });
+                              }}
                               className="mt-0.5 accent-purple-600 w-4 h-4 flex-shrink-0"
                             />
                             <span className="text-xs text-gray-700">
@@ -702,6 +629,8 @@ export default function DiagnosisPage() {
                         ))}
                       </div>
                     </div>
+
+                    {/* Checkbox Rekomendasi */}
                     <div>
                       <p className="text-xs font-bold text-emerald-700 uppercase tracking-wide mb-2">
                         Rekomendasi Terapi
@@ -715,7 +644,14 @@ export default function DiagnosisPage() {
                             <input
                               type="checkbox"
                               checked={memoryChecks.rekomendasi[idx] || false}
-                              onChange={() => updateRekomendasiCheck(idx)}
+                              onChange={() => {
+                                const updated = [...memoryChecks.rekomendasi];
+                                updated[idx] = !updated[idx];
+                                setMemoryChecks({
+                                  ...memoryChecks,
+                                  rekomendasi: updated,
+                                });
+                              }}
                               className="mt-0.5 accent-emerald-600 w-4 h-4 flex-shrink-0"
                             />
                             <span className="text-xs text-gray-700 leading-relaxed">

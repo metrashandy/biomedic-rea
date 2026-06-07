@@ -114,21 +114,16 @@ export default function HistoryPage() {
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Keluhan */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Keluhan & Gejala */}
                 <div className="bg-blue-50 rounded-lg p-3">
                   <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-1">
                     Keluhan Utama
                   </p>
                   <p className="text-sm text-blue-900">{v.keluhan || "-"}</p>
-                </div>
-
-                {/* Gejala & Vital */}
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1">
-                    Gejala & Vital
-                  </p>
-                  <p className="text-sm text-gray-700">{v.gejala || "-"}</p>
+                  {v.gejala && (
+                    <p className="text-xs text-blue-700 mt-1">{v.gejala}</p>
+                  )}
                   {v.tanda_vital && (
                     <p className="text-xs text-gray-500 mt-1">
                       📊 {v.tanda_vital}
@@ -139,13 +134,53 @@ export default function HistoryPage() {
                 {/* Diagnosis AI */}
                 <div className="bg-red-50 rounded-lg p-3">
                   <p className="text-xs font-bold text-red-700 uppercase tracking-wide mb-1">
-                    Diagnosis AI
+                    🔍 Diagnosis AI
                   </p>
                   <p className="text-sm text-red-900 leading-relaxed">
                     {v.diagnosis_ai || "-"}
                   </p>
                 </div>
               </div>
+
+              {/* ICD-10 yang dipilih dokter */}
+              {v.icd10_codes && v.icd10_codes.length > 0 && (
+                <div className="bg-purple-50 rounded-lg p-3">
+                  <p className="text-xs font-bold text-purple-700 uppercase tracking-wide mb-2">
+                    📋 Kode ICD-10 Terpilih
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {v.icd10_codes.map((item, i) => (
+                      <div key={i} className="flex items-center gap-1">
+                        <span className="font-mono font-bold text-purple-700 text-xs bg-purple-100 px-2 py-0.5 rounded">
+                          {item.kode}
+                        </span>
+                        <span className="text-xs text-purple-800">
+                          {item.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Rekomendasi yang dipilih dokter */}
+              {v.rekomendasi_terpilih && v.rekomendasi_terpilih.length > 0 && (
+                <div className="bg-emerald-50 rounded-lg p-3">
+                  <p className="text-xs font-bold text-emerald-700 uppercase tracking-wide mb-2">
+                    💊 Rekomendasi Terapi Terpilih
+                  </p>
+                  <ul className="list-disc pl-4 space-y-1">
+                    {v.rekomendasi_terpilih.map((rek, i) => (
+                      <li
+                        key={i}
+                        className="text-xs text-emerald-900 leading-relaxed"
+                      >
+                        {rek}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {/* Info tambahan jika ada */}
               {(v.alergi || v.hasil_lab) && (
