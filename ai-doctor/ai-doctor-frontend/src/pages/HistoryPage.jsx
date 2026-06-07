@@ -47,10 +47,10 @@ export default function HistoryPage() {
           </h2>
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-gray-600">
             <span className="bg-gray-100 px-2 py-1 rounded">
-              👤 {patient.age} Tahun
+              Umur : {patient.age} Tahun
             </span>
             <span className="bg-gray-100 px-2 py-1 rounded">
-              ⚧ {patient.gender}
+              Jenis Kelamin : {patient.gender}
             </span>
           </div>
         </div>
