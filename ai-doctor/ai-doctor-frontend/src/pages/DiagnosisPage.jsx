@@ -69,13 +69,14 @@ export default function DiagnosisPage() {
       formInput: prevForm,
     } = snapshot;
 
-    // User message: kirim semua field kecuali hasilLab, riwayat, catatan
-    // (ketiganya sudah ada di payload request terbaru, tidak perlu diulang di history)
     const userMessage = [
       `Keluhan: ${prevForm.keluhan}`,
       prevForm.gejala ? `Gejala: ${prevForm.gejala}` : null,
       prevForm.tandaVital ? `Vital: ${prevForm.tandaVital}` : null,
+      prevForm.hasilLab ? `Lab: ${prevForm.hasilLab}` : null,
+      prevForm.catatan ? `Observasi Dokter: ${prevForm.catatan}` : null,
       prevForm.alergi ? `Alergi: ${prevForm.alergi}` : null,
+      prevForm.riwayat ? `Riwayat Penyakit: ${prevForm.riwayat}` : null,
     ]
       .filter(Boolean)
       .join(". ");
@@ -114,6 +115,17 @@ export default function DiagnosisPage() {
 
     // Bangun history dari lastSnapshot (hasil giliran sebelumnya)
     const historyToSend = buildHistoryToSend(conversationHistory, lastSnapshot);
+
+    console.log("=== PAYLOAD LENGKAP YANG DIKIRIM ===");
+    console.log({
+      conversation_history: historyToSend,
+      keluhan: formSnapshot.keluhan,
+      gejala: formSnapshot.gejala,
+      tandaVital: formSnapshot.tandaVital,
+      hasilLab: formSnapshot.hasilLab,
+      alergi: formSnapshot.alergi,
+    });
+    console.log("=====================================");
 
     setIsLoading(true);
     setAiResult(null);
