@@ -146,11 +146,14 @@ class DiagnosisRequest(BaseModel):
     hasilLab: Optional[str] = ""
     alergi: Optional[str] = ""
     riwayat: Optional[str] = ""
-    catatan: Optional[str] = ""
+    catatan: Optional[str] = ""      # Catatan dokter — bisa berisi arahan "cek lab dulu, belum yakin"
     teks_bebas: Optional[str] = ""
     save_visit: bool = False
     conversation_history: Optional[List[ConversationTurn]] = []
     chat_konsultasi: Optional[List[ChatTurn]] = []
+    # Gambar pendukung keluhan — dikirim langsung ke prompt utama bersama keluhan
+    image_base64: Optional[str] = None
+    image_type: Optional[str] = "image/jpeg"
 
 class SaveVisitRequest(BaseModel):
     patient_id: Optional[int] = None
@@ -196,8 +199,11 @@ class ChatRequest(BaseModel):
     name: str
     age: int
     gender: str
-    # Konteks dari hasil diagnosis yang sudah ada (bukan form gejala)
+    # Konteks hasil diagnosis sesi ini
     diagnosis_context: Optional[dict] = None
+    # Memori sesi: riwayat analisis multi-giliran
+    conversation_history: Optional[List[ConversationTurn]] = []
+    # Riwayat chat dalam sesi ini
     chat_history: Optional[List[ChatTurn]] = []
     pesan: str
 
@@ -205,70 +211,87 @@ class ChatRequest(BaseModel):
 # ==========================================
 # AI FUNCTIONS
 # ==========================================
-def generate_ai_diagnosis(patient_data: dict, db_history_text: str, conversation_history: list, chat_konsultasi: list = []):
+def generate_ai_diagnosis(patient_data: dict, db_history_text: str, conversation_history: list,
+                           chat_konsultasi: list = [], image_base64: str = None, image_type: str = "image/jpeg"):
+    """
+    Analisis diagnosis utama.
+    - Gambar (jika ada) dikirim DALAM prompt yang sama sebagai pendukung keluhan — bukan terpisah.
+    - Catatan dokter (catatan field) dibaca AI untuk menentukan apakah perlu periksa dulu
+      sebelum diagnosis pasti (contoh: "cek lab dulu, belum yakin").
+    - Chat history (memori sesi) dipakai sebagai konteks multi-giliran.
+    """
     system_prompt = """
 Anda adalah asisten dokter spesialis (Clinical Decision Support System) yang sangat ahli dan akurat.
-Tugas Anda adalah menganalisis data klinis pasien dan memberikan kemungkinan diagnosis beserta kode ICD-10,
-rekomendasi pengobatan, saran pemeriksaan lanjutan, dan tanda bahaya yang harus diwaspadai dokter.
+Tugas Anda adalah menganalisis SEMUA data klinis pasien — termasuk keluhan, gejala, tanda vital,
+hasil lab, foto temuan fisik (jika ada), dan catatan dokter — lalu memberikan output yang tepat.
 
-PERHATIAN PENTING:
-- Dosis obat WAJIB mempertimbangkan Umur dan Berat Badan pasien secara spesifik.
-- WAJIB periksa alergi pasien — jangan merekomendasikan obat yang termasuk dalam daftar alergi!
-- Jika ada riwayat percakapan atau catatan konsultasi, gunakan sebagai konteks tambahan.
-- Berikan nama obat generik beserta dosis dan durasi pemakaian yang spesifik.
-- Selalu pertimbangkan diagnosis banding (differential diagnosis).
-- Jika data belum cukup untuk diagnosis pasti, sampaikan dan berikan saran pemeriksaan untuk melengkapi data.
+INSTRUKSI PENTING — BACA CATATAN DOKTER:
+Catatan dokter adalah arahan dari dokter pemeriksa. Jika dokter menulis sesuatu seperti:
+  - "belum yakin", "cek lab dulu", "perlu pemeriksaan lebih lanjut", "tunggu hasil lab"
+  - atau indikasi serupa bahwa data belum lengkap
+Maka AI WAJIB:
+  1. Menyatakan diagnosis masih tentatif/belum pasti di field "penyakit"
+  2. Mengutamakan saran pemeriksaan di field "saran_pemeriksaan"
+  3. Mengisi "kelengkapan_data" dengan penjelasan data apa yang masih kurang
+  4. Tetap berikan kemungkinan awal, tapi sampaikan ketidakpastiannya
 
-FORMAT OUTPUT:
-Anda WAJIB merespons HANYA dalam format JSON berikut (tanpa teks apapun di luar JSON):
+INSTRUKSI FOTO / GAMBAR PENDUKUNG:
+Jika ada foto temuan fisik yang diberikan (ruam, benjolan, bercak, lebam, luka, dll):
+  - Analisis foto sebagai bagian dari data klinis, bukan terpisah
+  - Hubungkan temuan visual dengan keluhan dan gejala pasien
+  - Sebutkan temuan foto secara singkat di bagian "penyakit" jika relevan
+
+PERHATIAN UMUM:
+- Dosis obat WAJIB mempertimbangkan Umur dan Berat Badan pasien.
+- WAJIB periksa alergi — jangan rekomendasikan obat yang ada di daftar alergi.
+- Pertimbangkan diagnosis banding (differential diagnosis).
+
+FORMAT OUTPUT — WAJIB JSON SAJA (tanpa teks di luar JSON):
 {
-    "penyakit": "Penjelasan kemungkinan diagnosis utama beserta diagnosis banding dan alasan klinis dalam 2-4 kalimat.",
+    "penyakit": "Diagnosis kemungkinan beserta alasan klinis. Jika belum yakin karena data kurang/catatan dokter minta periksa dulu, nyatakan dengan jelas bahwa ini masih tentatif.",
     "icd10": [
-        {"kode": "A15.0", "label": "Tuberculosis of lung, confirmed by sputum microscopy"}
+        {"kode": "A90", "label": "Dengue fever"}
     ],
     "rekomendasi": [
         "Nama obat generik — dosis — frekuensi — durasi",
         "Tindakan non-farmakologi",
-        "Pemeriksaan penunjang yang disarankan beserta alasannya"
+        "Pemeriksaan penunjang spesifik"
     ],
     "saran_pemeriksaan": [
-        "Pemeriksaan 1 — alasan mengapa perlu",
-        "Pemeriksaan 2 — tujuan pemeriksaan"
+        "Nama pemeriksaan — alasan spesifik mengapa perlu untuk kasus ini"
     ],
     "pertanyaan_lanjutan": [
-        "Pertanyaan relevan 1 untuk melengkapi anamnesis",
-        "Pertanyaan relevan 2"
+        "Pertanyaan anamnesis yang masih perlu dijawab pasien"
     ],
-    "tanda_bahaya": "Sebutkan secara spesifik kondisi atau gejala red flag pada kasus ini yang mengharuskan rujukan segera ke IGD atau spesialis.",
-    "kelengkapan_data": "Singkat: apakah data sudah cukup untuk diagnosis atau masih memerlukan informasi tambahan."
+    "tanda_bahaya": "Red flag spesifik untuk kasus ini yang butuh rujukan segera.",
+    "kelengkapan_data": "Status data: cukup/belum cukup. Jika belum, sebutkan data apa yang masih diperlukan."
 }
 
-ATURAN:
-- Berikan 2-4 kode ICD-10 yang paling relevan.
-- Rekomendasi minimal 3 poin: farmakologi, non-farmakologi, dan penunjang.
-- Saran pemeriksaan: 2-4 pemeriksaan lanjutan yang perlu dilakukan.
+ATURAN OUTPUT:
+- 2-4 kode ICD-10 paling relevan.
+- Rekomendasi minimal 3 poin: farmakologi, non-farmakologi, penunjang.
+- Saran pemeriksaan: 2-4 item, spesifik sesuai kasus.
 - Pertanyaan lanjutan: 2-3 pertanyaan untuk anamnesis lebih lanjut.
 - Keputusan klinis final adalah wewenang dokter pemeriksa.
 """
 
+    # Susun chat history sebagai konteks multi-giliran (memori sesi)
     messages = [{"role": "system", "content": system_prompt}]
-
     for turn in conversation_history:
         messages.append({"role": "user", "content": turn["user"] if isinstance(turn, dict) else turn.user})
         messages.append({"role": "assistant", "content": turn["assistant"] if isinstance(turn, dict) else turn.assistant})
 
-    # Susun chat konsultasi sebagai bagian dari prompt
+    # Susun teks chat konsultasi sesi ini
     chat_text = ""
     if chat_konsultasi:
-        chat_lines = []
+        lines = []
         for t in chat_konsultasi:
             role = t["role"] if isinstance(t, dict) else t.role
-            content = t["content"] if isinstance(t, dict) else t.content
-            prefix = "Dokter" if role == "dokter" else "AI"
-            chat_lines.append(f"{prefix}: {content}")
-        chat_text = "\n".join(chat_lines)
+            content_val = t["content"] if isinstance(t, dict) else t.content
+            lines.append(f"{'Dokter' if role == 'dokter' else 'AI'}: {content_val}")
+        chat_text = "\n".join(lines)
 
-    user_prompt = f"""
+    text_prompt = f"""
 DATA PASIEN:
 - Nama: {patient_data['name']}
 - Umur: {patient_data['age']} Tahun
@@ -278,23 +301,33 @@ DATA PASIEN:
 - Alergi: {patient_data.get('alergi') or 'Tidak ada / tidak diketahui'}
 - Riwayat Penyakit Pribadi: {patient_data.get('riwayat') or 'Tidak ada / tidak diketahui'}
 
-RIWAYAT KUNJUNGAN SEBELUMNYA (dari database):
+RIWAYAT KUNJUNGAN SEBELUMNYA (database):
 {db_history_text}
 
-KONDISI KUNJUNGAN SAAT INI:
+DATA KLINIS KUNJUNGAN SAAT INI:
 - Keluhan Utama: {patient_data['keluhan']}
 - Gejala Tambahan: {patient_data.get('gejala') or 'Tidak disebutkan'}
 - Tanda Vital: {patient_data.get('tandaVital') or 'Tidak diukur'}
-- Hasil Laboratorium: {patient_data.get('hasilLab') or 'Tidak ada'}
-- Catatan Dokter: {patient_data.get('catatan') or 'Tidak ada'}
-- Teks Bebas / Keterangan Tambahan: {patient_data.get('teks_bebas') or 'Tidak ada'}
+- Hasil Laboratorium: {patient_data.get('hasilLab') or 'Belum ada'}
+- Catatan / Arahan Dokter: {patient_data.get('catatan') or 'Tidak ada'}
+- Keterangan Tambahan: {patient_data.get('teks_bebas') or 'Tidak ada'}
+{"" if not image_base64 else "- Foto Temuan Fisik: Terlampir (lihat gambar)"}
 
-{f'RIWAYAT KONSULTASI INTERAKTIF:{chr(10)}{chat_text}' if chat_text else ''}
+{f"RIWAYAT CHAT SESI INI:{chr(10)}{chat_text}" if chat_text else ""}
 
-Berikan analisis diagnosis lengkap dalam format JSON.
+{"Analisis seluruh data di atas TERMASUK foto yang terlampir sebagai satu kesatuan." if image_base64 else "Berikan analisis diagnosis lengkap."} Output harus JSON.
 """
 
-    messages.append({"role": "user", "content": user_prompt})
+    # Bangun content pesan — gabungkan teks + gambar jika ada dalam satu message
+    if image_base64:
+        user_content = [
+            {"type": "text", "text": text_prompt},
+            {"type": "image_url", "image_url": {"url": f"data:{image_type};base64,{image_base64}"}},
+        ]
+    else:
+        user_content = text_prompt
+
+    messages.append({"role": "user", "content": user_content})
 
     response = client.chat.completions.create(
         model="gpt-5.4",
@@ -373,93 +406,126 @@ Berikan analisis dalam format JSON."""
 
 
 # ==========================================
-# PDF GENERATOR
+# PDF GENERATOR — hitam putih, rata kanan-kiri, profesional
 # ==========================================
 def generate_pdf_report(visit_data: dict, patient_data: dict) -> str:
+    from reportlab.lib.enums import TA_JUSTIFY, TA_LEFT, TA_CENTER, TA_RIGHT
+    from reportlab.platypus import KeepTogether
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"laporan_{patient_data['id']}_{timestamp}.pdf"
     filepath = os.path.join(PDF_DIR, filename)
 
     doc = SimpleDocTemplate(
-        filepath,
-        pagesize=A4,
-        rightMargin=2*cm,
-        leftMargin=2*cm,
-        topMargin=2*cm,
-        bottomMargin=2*cm
+        filepath, pagesize=A4,
+        rightMargin=2.5*cm, leftMargin=2.5*cm,
+        topMargin=2.5*cm, bottomMargin=2.5*cm
     )
 
     styles = getSampleStyleSheet()
+    BLACK  = colors.black
+    GRAY   = colors.HexColor('#555555')
+    LGRAY  = colors.HexColor('#999999')
 
-    # Style kustom
-    style_title = ParagraphStyle('CustomTitle', parent=styles['Title'],
-        fontSize=16, spaceAfter=6, textColor=colors.HexColor('#1d4ed8'), alignment=TA_CENTER)
-    style_subtitle = ParagraphStyle('Subtitle', parent=styles['Normal'],
-        fontSize=10, spaceAfter=12, textColor=colors.grey, alignment=TA_CENTER)
-    style_h2 = ParagraphStyle('H2', parent=styles['Heading2'],
-        fontSize=12, spaceBefore=14, spaceAfter=4,
-        textColor=colors.HexColor('#1e40af'),
-        borderPad=4)
-    style_body = ParagraphStyle('Body', parent=styles['Normal'],
-        fontSize=10, spaceAfter=4, leading=14)
-    style_small = ParagraphStyle('Small', parent=styles['Normal'],
-        fontSize=9, textColor=colors.grey, spaceAfter=2)
-    style_bold = ParagraphStyle('Bold', parent=styles['Normal'],
-        fontSize=10, fontName='Helvetica-Bold', spaceAfter=4)
-    style_disclaimer = ParagraphStyle('Disclaimer', parent=styles['Normal'],
-        fontSize=8, textColor=colors.HexColor('#dc2626'),
-        borderColor=colors.HexColor('#fca5a5'),
-        backColor=colors.HexColor('#fef2f2'),
-        borderPad=6, borderWidth=1, alignment=TA_CENTER)
+    # ---- Style definitions ----
+    s_title = ParagraphStyle('s_title', parent=styles['Normal'],
+        fontName='Helvetica-Bold', fontSize=14, leading=18,
+        alignment=TA_CENTER, spaceAfter=2, textColor=BLACK)
+
+    s_subtitle = ParagraphStyle('s_subtitle', parent=styles['Normal'],
+        fontName='Helvetica', fontSize=9, leading=12,
+        alignment=TA_CENTER, spaceAfter=2, textColor=GRAY)
+
+    s_h2 = ParagraphStyle('s_h2', parent=styles['Normal'],
+        fontName='Helvetica-Bold', fontSize=11, leading=14,
+        spaceBefore=14, spaceAfter=4, textColor=BLACK)
+
+    s_body = ParagraphStyle('s_body', parent=styles['Normal'],
+        fontName='Helvetica', fontSize=10, leading=14,
+        alignment=TA_JUSTIFY, spaceAfter=4, textColor=BLACK)
+
+    s_body_bold = ParagraphStyle('s_body_bold', parent=styles['Normal'],
+        fontName='Helvetica-Bold', fontSize=10, leading=14,
+        alignment=TA_JUSTIFY, spaceAfter=2, textColor=BLACK)
+
+    s_bullet = ParagraphStyle('s_bullet', parent=styles['Normal'],
+        fontName='Helvetica', fontSize=10, leading=14,
+        alignment=TA_JUSTIFY, leftIndent=12, spaceAfter=3, textColor=BLACK)
+
+    s_small = ParagraphStyle('s_small', parent=styles['Normal'],
+        fontName='Helvetica', fontSize=8, leading=11,
+        alignment=TA_CENTER, textColor=LGRAY)
+
+    s_chat_dokter = ParagraphStyle('s_chat_d', parent=styles['Normal'],
+        fontName='Helvetica', fontSize=9, leading=13,
+        alignment=TA_JUSTIFY, leftIndent=0, rightIndent=20,
+        spaceAfter=3, textColor=BLACK)
+
+    s_chat_ai = ParagraphStyle('s_chat_ai', parent=styles['Normal'],
+        fontName='Helvetica', fontSize=9, leading=13,
+        alignment=TA_JUSTIFY, leftIndent=20, rightIndent=0,
+        spaceAfter=3, textColor=GRAY)
+
+    s_disclaimer = ParagraphStyle('s_disclaimer', parent=styles['Normal'],
+        fontName='Helvetica', fontSize=8, leading=11,
+        alignment=TA_JUSTIFY, textColor=GRAY)
 
     story = []
     now = datetime.now().strftime("%d %B %Y, %H:%M")
 
     # ===== HEADER =====
-    story.append(Paragraph("LAPORAN ANALISIS KLINIS", style_title))
-    story.append(Paragraph("AI Doctor — Clinical Decision Support System", style_subtitle))
-    story.append(Paragraph(f"Tanggal: {now}", style_subtitle))
-    story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#1d4ed8'), spaceAfter=14))
+    story.append(Paragraph("LAPORAN ANALISIS KLINIS", s_title))
+    story.append(Paragraph("Clinical Decision Support System — AI Doctor", s_subtitle))
+    story.append(Paragraph(f"Tanggal Cetak: {now}", s_subtitle))
+    story.append(Spacer(1, 6))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=BLACK, spaceAfter=10))
 
-    # ===== DATA PASIEN =====
-    story.append(Paragraph("1. Identitas Pasien", style_h2))
-    patient_table_data = [
-        ["Nama", ":", patient_data.get('name', '-')],
-        ["Umur / Gender", ":", f"{patient_data.get('age', '-')} tahun / {patient_data.get('gender', '-')}"],
-        ["Berat / Tinggi", ":", f"{patient_data.get('weight') or '-'} kg / {patient_data.get('height') or '-'} cm"],
-        ["No. RM", ":", f"RM-{str(patient_data.get('id', 0)).zfill(3)}"],
+    # ===== 1. IDENTITAS PASIEN =====
+    story.append(Paragraph("1. Identitas Pasien", s_h2))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=LGRAY, spaceAfter=6))
+
+    tbl_data = [
+        [Paragraph("<b>Nama</b>", s_body),       Paragraph(":", s_body), Paragraph(patient_data.get('name', '-'), s_body)],
+        [Paragraph("<b>Umur / Gender</b>", s_body), Paragraph(":", s_body),
+         Paragraph(f"{patient_data.get('age', '-')} tahun / {patient_data.get('gender', '-')}", s_body)],
+        [Paragraph("<b>Berat / Tinggi</b>", s_body), Paragraph(":", s_body),
+         Paragraph(f"{patient_data.get('weight') or '-'} kg / {patient_data.get('height') or '-'} cm", s_body)],
+        [Paragraph("<b>No. RM</b>", s_body), Paragraph(":", s_body),
+         Paragraph(f"RM-{str(patient_data.get('id', 0)).zfill(3)}", s_body)],
     ]
-    pt = Table(patient_table_data, colWidths=[4*cm, 0.5*cm, 12*cm])
-    pt.setStyle(TableStyle([
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
+    tbl = Table(tbl_data, colWidths=[4*cm, 0.6*cm, 11.4*cm])
+    tbl.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+        ('LINEBELOW', (0,-1), (-1,-1), 0.3, LGRAY),
     ]))
-    story.append(pt)
-    story.append(Spacer(1, 10))
+    story.append(tbl)
+    story.append(Spacer(1, 8))
 
-    # ===== ANAMNESIS =====
-    story.append(Paragraph("2. Anamnesis & Pemeriksaan", style_h2))
+    # ===== 2. ANAMNESIS & PEMERIKSAAN =====
+    story.append(Paragraph("2. Anamnesis & Pemeriksaan", s_h2))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=LGRAY, spaceAfter=6))
 
-    fields = [
-        ("Keluhan Utama", visit_data.get('keluhan', '-')),
-        ("Gejala Tambahan", visit_data.get('gejala') or '-'),
-        ("Tanda Vital", visit_data.get('tanda_vital') or '-'),
-        ("Hasil Laboratorium", visit_data.get('hasil_lab') or '-'),
-        ("Alergi", visit_data.get('alergi') or '-'),
+    fields_anam = [
+        ("Keluhan Utama",       visit_data.get('keluhan') or '-'),
+        ("Gejala Tambahan",     visit_data.get('gejala') or '-'),
+        ("Tanda Vital",         visit_data.get('tanda_vital') or '-'),
+        ("Hasil Laboratorium",  visit_data.get('hasil_lab') or '-'),
+        ("Alergi",              visit_data.get('alergi') or '-'),
     ]
-    for label, val in fields:
-        story.append(Paragraph(f"<b>{label}:</b> {val}", style_body))
+    for label, val in fields_anam:
+        story.append(Paragraph(f"<b>{label}:</b>", s_body_bold))
+        story.append(Paragraph(val, s_body))
 
     if visit_data.get('teks_bebas'):
-        story.append(Spacer(1, 6))
-        story.append(Paragraph("<b>Catatan Bebas Dokter / Keterangan Tambahan:</b>", style_body))
-        story.append(Paragraph(visit_data['teks_bebas'], style_body))
+        story.append(Spacer(1, 4))
+        story.append(Paragraph("<b>Catatan Bebas Dokter / Keterangan Tambahan:</b>", s_body_bold))
+        story.append(Paragraph(visit_data['teks_bebas'], s_body))
 
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
 
-    # ===== CHAT KONSULTASI =====
+    # ===== 3. RIWAYAT KONSULTASI (jika ada) =====
     chat_history = []
     if visit_data.get('chat_history'):
         try:
@@ -467,106 +533,115 @@ def generate_pdf_report(visit_data: dict, patient_data: dict) -> str:
         except:
             chat_history = []
 
+    section_num = 3
     if chat_history:
-        story.append(Paragraph("3. Riwayat Konsultasi Interaktif", style_h2))
-        for i, turn in enumerate(chat_history):
-            role = turn.get('role', '')
-            content = turn.get('content', '')
-            prefix = "Dokter" if role == "dokter" else "AI"
-            color_hex = '#1e40af' if role == 'dokter' else '#065f46'
-            bubble_style = ParagraphStyle(f'bubble_{i}', parent=styles['Normal'],
-                fontSize=9, leading=13,
-                textColor=colors.HexColor(color_hex),
-                leftIndent=10 if role == 'ai' else 0,
-                rightIndent=0 if role == 'ai' else 10,
-                spaceAfter=3)
-            story.append(Paragraph(f"<b>[{prefix}]</b> {content}", bubble_style))
-        story.append(Spacer(1, 10))
+        story.append(Paragraph(f"{section_num}. Riwayat Konsultasi Interaktif", s_h2))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=LGRAY, spaceAfter=6))
+        for turn in chat_history:
+            role    = turn.get('role', '')
+            msg     = turn.get('content', '')
+            prefix  = "Dokter" if role == "dokter" else "AI"
+            st      = s_chat_dokter if role == "dokter" else s_chat_ai
+            story.append(Paragraph(f"<b>[{prefix}]</b> {msg}", st))
+        story.append(Spacer(1, 8))
+        section_num += 1
 
-    # ===== HASIL AI =====
-    section_num = 4 if chat_history else 3
-    story.append(Paragraph(f"{section_num}. Hasil Analisis AI", style_h2))
-    story.append(Paragraph(f"<b>Kemungkinan Diagnosis:</b>", style_bold))
-    story.append(Paragraph(visit_data.get('diagnosis_ai', '-'), style_body))
+    # ===== 4. HASIL ANALISIS AI =====
+    story.append(Paragraph(f"{section_num}. Hasil Analisis AI", s_h2))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=LGRAY, spaceAfter=6))
+    section_num += 1
+
+    # Kemungkinan Diagnosis
+    story.append(Paragraph("<b>Kemungkinan Diagnosis:</b>", s_body_bold))
+    story.append(Paragraph(visit_data.get('diagnosis_ai') or '-', s_body))
     story.append(Spacer(1, 6))
 
+    # Kelengkapan data
     if visit_data.get('kelengkapan_data'):
-        story.append(Paragraph(f"<b>Kelengkapan Data:</b> {visit_data['kelengkapan_data']}", style_body))
+        story.append(Paragraph("<b>Status Kelengkapan Data:</b>", s_body_bold))
+        story.append(Paragraph(visit_data['kelengkapan_data'], s_body))
         story.append(Spacer(1, 6))
 
-    # ICD-10
+    # Kode ICD-10
     icd10_list = []
     if visit_data.get('icd10_codes'):
         try:
             icd10_list = json.loads(visit_data['icd10_codes'])
         except:
             icd10_list = []
-
     if icd10_list:
-        story.append(Paragraph("<b>Kode ICD-10:</b>", style_bold))
+        story.append(Paragraph("<b>Kode ICD-10:</b>", s_body_bold))
         for item in icd10_list:
-            story.append(Paragraph(f"• {item.get('kode', '')} — {item.get('label', '')}", style_body))
+            story.append(Paragraph(
+                f"• {item.get('kode', '')} — {item.get('label', '')}",
+                s_bullet))
         story.append(Spacer(1, 6))
 
-    # Rekomendasi
+    # Rekomendasi Terapi
     rek_list = []
     if visit_data.get('rekomendasi_terpilih'):
         try:
             rek_list = json.loads(visit_data['rekomendasi_terpilih'])
         except:
             rek_list = []
-
     if rek_list:
-        story.append(Paragraph("<b>Rekomendasi Terapi:</b>", style_bold))
-        for rek in rek_list:
-            story.append(Paragraph(f"• {rek}", style_body))
+        story.append(Paragraph("<b>Rekomendasi Terapi:</b>", s_body_bold))
+        for i, rek in enumerate(rek_list, 1):
+            story.append(Paragraph(f"{i}. {rek}", s_bullet))
         story.append(Spacer(1, 6))
 
-    # Saran Pemeriksaan
+    # Saran Pemeriksaan Lanjutan
     if visit_data.get('saran_pemeriksaan'):
-        story.append(Paragraph("<b>Saran Pemeriksaan Lanjutan:</b>", style_bold))
-        story.append(Paragraph(visit_data['saran_pemeriksaan'], style_body))
+        story.append(Paragraph("<b>Saran Pemeriksaan Lanjutan:</b>", s_body_bold))
+        for line in visit_data['saran_pemeriksaan'].split("\n"):
+            if line.strip():
+                story.append(Paragraph(f"• {line.strip()}", s_bullet))
         story.append(Spacer(1, 6))
 
-    # Tanda Bahaya
+    # Tanda Bahaya — kotak garis hitam tipis, teks hitam
     if visit_data.get('tanda_bahaya'):
-        story.append(Paragraph("<b>Tanda Bahaya / Indikasi Rujukan:</b>", style_bold))
-        danger_style = ParagraphStyle('danger', parent=styles['Normal'],
-            fontSize=10, textColor=colors.HexColor('#dc2626'),
-            backColor=colors.HexColor('#fef2f2'),
-            borderColor=colors.HexColor('#fca5a5'),
-            borderWidth=1, borderPad=6, spaceAfter=6)
-        story.append(Paragraph(visit_data['tanda_bahaya'], danger_style))
-        story.append(Spacer(1, 6))
+        story.append(Paragraph("<b>Tanda Bahaya / Indikasi Rujukan Segera:</b>", s_body_bold))
+        tb_data = [[Paragraph(visit_data['tanda_bahaya'], s_body)]]
+        tb_tbl = Table(tb_data, colWidths=[16*cm])
+        tb_tbl.setStyle(TableStyle([
+            ('BOX',        (0,0), (-1,-1), 0.8, BLACK),
+            ('TOPPADDING',  (0,0), (-1,-1), 6),
+            ('BOTTOMPADDING',(0,0), (-1,-1), 6),
+            ('LEFTPADDING', (0,0), (-1,-1), 8),
+            ('RIGHTPADDING',(0,0), (-1,-1), 8),
+        ]))
+        story.append(tb_tbl)
+        story.append(Spacer(1, 8))
 
-    # ===== ANALISIS GAMBAR =====
+    # ===== 5. ANALISIS FOTO (jika ada) =====
     if visit_data.get('analisis_gambar'):
-        section_num += 1
-        story.append(Paragraph(f"{section_num}. Analisis Foto / Temuan Fisik", style_h2))
+        story.append(Paragraph(f"{section_num}. Analisis Foto / Temuan Fisik", s_h2))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=LGRAY, spaceAfter=6))
         try:
             img_result = json.loads(visit_data['analisis_gambar'])
-            fields_img = [
-                ("Deskripsi Visual", img_result.get('deskripsi_gambar', '-')),
-                ("Kemungkinan Temuan", img_result.get('kemungkinan_temuan', '-')),
-                ("Rekomendasi", img_result.get('rekomendasi_lanjut', '-')),
-                ("Catatan", img_result.get('catatan', '-')),
+            img_fields = [
+                ("Deskripsi Visual",    img_result.get('deskripsi_gambar', '-')),
+                ("Kemungkinan Temuan",  img_result.get('kemungkinan_temuan', '-')),
+                ("Rekomendasi Lanjut",  img_result.get('rekomendasi_lanjut', '-')),
+                ("Catatan",             img_result.get('catatan', '-')),
             ]
-            for label, val in fields_img:
-                story.append(Paragraph(f"<b>{label}:</b> {val}", style_body))
+            for label, val in img_fields:
+                if val and val != '-':
+                    story.append(Paragraph(f"<b>{label}:</b>", s_body_bold))
+                    story.append(Paragraph(val, s_body))
         except:
-            story.append(Paragraph(visit_data['analisis_gambar'], style_body))
-        story.append(Spacer(1, 10))
+            story.append(Paragraph(visit_data['analisis_gambar'], s_body))
+        story.append(Spacer(1, 8))
 
-    # ===== FOOTER DISCLAIMER =====
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.grey, spaceBefore=16, spaceAfter=10))
+    # ===== FOOTER =====
+    story.append(HRFlowable(width="100%", thickness=0.5, color=LGRAY, spaceBefore=12, spaceAfter=6))
     story.append(Paragraph(
-        "⚠️ DISCLAIMER: Hasil analisis ini hanya sebagai Clinical Decision Support System (CDSS). "
-        "Keputusan medis, diagnosis akhir, dan resep obat mutlak merupakan tanggung jawab dokter pemeriksa. "
-        "Sistem AI tidak menggantikan pemeriksaan langsung oleh tenaga medis yang kompeten.",
-        style_disclaimer
-    ))
-    story.append(Spacer(1, 6))
-    story.append(Paragraph(f"Dicetak oleh: AI Doctor System | {now}", style_small))
+        "Hasil analisis ini hanya sebagai Clinical Decision Support System (CDSS) dan bukan pengganti "
+        "penilaian klinis dokter. Keputusan medis, diagnosis akhir, dan tata laksana terapi sepenuhnya "
+        "merupakan tanggung jawab dokter pemeriksa berdasarkan pemeriksaan langsung.",
+        s_disclaimer))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(f"Dicetak oleh: AI Doctor System  |  {now}", s_small))
 
     doc.build(story)
     return filepath
@@ -694,12 +769,29 @@ def analyze_diagnosis(req: DiagnosisRequest):
             ])
 
         patient_dict = req.dict()
+        # Simpan gambar ke disk jika ada, sebelum dikirim ke AI
+        saved_image_path = ""
+        if req.image_base64:
+            try:
+                img_bytes = base64.b64decode(req.image_base64)
+                ext = (req.image_type or "image/jpeg").split("/")[-1]
+                img_filename = f"{uuid.uuid4().hex}.{ext}"
+                img_path = os.path.join(UPLOAD_DIR, img_filename)
+                with open(img_path, "wb") as f_img:
+                    f_img.write(img_bytes)
+                saved_image_path = img_path
+            except Exception:
+                pass
+
         ai_result = generate_ai_diagnosis(
             patient_dict,
             db_history_text,
             req.conversation_history or [],
-            req.chat_konsultasi or []
+            req.chat_konsultasi or [],
+            image_base64=req.image_base64,
+            image_type=req.image_type or "image/jpeg"
         )
+        ai_result["saved_image_path"] = saved_image_path
 
         ai_result["db_patient_id"] = patient.id
         return ai_result
@@ -707,34 +799,6 @@ def analyze_diagnosis(req: DiagnosisRequest):
     finally:
         db.close()
 
-
-# ==========================================
-# ENDPOINT BARU: Analisis Gambar
-# ==========================================
-@app.post("/api/analyze-image")
-def analyze_image(req: ImageAnalysisRequest):
-    patient_data = {
-        "name": req.name,
-        "age": req.age,
-        "gender": req.gender,
-        "keluhan": req.keluhan,
-        "gejala": req.gejala,
-    }
-    result = analyze_image_with_ai(req.image_base64, req.image_type, patient_data)
-
-    # Simpan gambar ke disk
-    try:
-        img_bytes = base64.b64decode(req.image_base64)
-        ext = req.image_type.split("/")[-1] if "/" in req.image_type else "jpg"
-        img_filename = f"{uuid.uuid4().hex}.{ext}"
-        img_path = os.path.join(UPLOAD_DIR, img_filename)
-        with open(img_path, "wb") as f:
-            f.write(img_bytes)
-        result["saved_image_path"] = img_path
-    except Exception as e:
-        result["saved_image_path"] = ""
-
-    return result
 
 
 # ==========================================
@@ -842,58 +906,62 @@ def generate_pdf(visit_id: int):
 @app.post("/api/chat")
 def chat_konsultasi(req: ChatRequest):
     """
-    Chat tanya-jawab bebas berdasarkan hasil diagnosis yang sudah muncul.
-    Yang dikirim ke AI adalah:
+    Chat konsultasi berbasis memori sesi (conversationHistory).
+    Konteks yang dikirim ke AI:
       - Identitas pasien
-      - Hasil diagnosis sebelumnya (penyakit, ICD-10, rekomendasi, saran, tanda bahaya)
-      - Riwayat percakapan chat sebelumnya
+      - Hasil diagnosis sesi ini (dari diagnosis_context)
+      - Seluruh conversation_history (memori multi-giliran sesi)
+      - Riwayat chat sebelumnya dalam sesi
       - Pesan terbaru dari dokter
     """
     system_prompt = """
-Anda adalah asisten dokter yang membantu menjawab pertanyaan lanjutan seputar hasil diagnosis yang sudah diberikan.
-Anda sudah memiliki konteks hasil analisis klinis pasien. Jawab pertanyaan dokter secara ringkas, jelas, dan klinis.
+Anda adalah asisten dokter yang membantu menjawab pertanyaan lanjutan berdasarkan hasil diagnosis
+dan riwayat konsultasi yang sudah ada. Gunakan semua konteks yang diberikan untuk menjawab.
 
 PANDUAN:
-- Jawab spesifik sesuai pertanyaan, jangan mengulang seluruh diagnosis.
-- Jika ditanya tentang obat, sebutkan dosis dan durasi yang sesuai kondisi pasien.
-- Jika ditanya pemeriksaan tambahan, jelaskan tujuan dan urgensinya.
-- Jika pertanyaan di luar konteks medis, arahkan kembali ke topik klinis.
-- Selalu ingatkan bahwa keputusan akhir ada di tangan dokter pemeriksa.
-- Jawaban maksimal 3-5 kalimat kecuali perlu penjelasan lebih.
+- Jawab spesifik sesuai pertanyaan, tidak perlu mengulang seluruh diagnosis.
+- Jika ditanya obat: sebutkan dosis dan durasi sesuai kondisi pasien.
+- Jika ditanya pemeriksaan: jelaskan tujuan dan urgensinya.
+- Manfaatkan riwayat percakapan sebelumnya — jangan tanya ulang hal yang sudah dibahas.
+- Jawaban ringkas 2-4 kalimat kecuali perlu lebih panjang.
+- Selalu ingatkan keputusan akhir ada di tangan dokter pemeriksa.
 """
 
-    # Susun konteks diagnosis sebagai pesan system tambahan
-    ctx = req.diagnosis_context
-    context_text = ""
-    if ctx:
-        icd_text = ", ".join([f"{x.get('kode')} ({x.get('label')})" for x in (ctx.get("icd10") or [])])
-        rek_text = " | ".join(ctx.get("rekomendasi") or [])
-        saran_text = " | ".join(ctx.get("saran_pemeriksaan") or [])
-        context_text = f"""
-KONTEKS HASIL DIAGNOSIS PASIEN:
+    # Bangun konteks dari hasil diagnosis + memori sesi
+    ctx = req.diagnosis_context or {}
+    icd_text = ", ".join([f"{x.get('kode')} ({x.get('label')})" for x in (ctx.get("icd10") or [])])
+    rek_text = " | ".join(ctx.get("rekomendasi") or [])
+    saran_text = " | ".join(ctx.get("saran_pemeriksaan") or [])
+
+    context_block = f"""KONTEKS PASIEN & DIAGNOSIS SESI INI:
 - Pasien: {req.name}, {req.age} tahun, {req.gender}
-- Diagnosis: {ctx.get('penyakit', '-')}
+- Diagnosis saat ini: {ctx.get('penyakit') or 'Belum ada diagnosis'}
 - ICD-10: {icd_text or '-'}
 - Rekomendasi terapi: {rek_text or '-'}
 - Saran pemeriksaan: {saran_text or '-'}
-- Tanda bahaya: {ctx.get('tanda_bahaya', '-')}
-"""
-    else:
-        context_text = f"Pasien: {req.name}, {req.age} tahun, {req.gender}. Belum ada hasil diagnosis sebelumnya."
+- Tanda bahaya: {ctx.get('tanda_bahaya') or '-'}
+- Status data: {ctx.get('kelengkapan_data') or '-'}"""
 
-    # Bangun messages: system + riwayat chat + pesan baru
-    messages = [
-        {"role": "system", "content": system_prompt + "\n" + context_text}
-    ]
+    # Tambahkan memori sesi (conversationHistory multi-giliran) sebagai konteks
+    session_memory = ""
+    if req.conversation_history:
+        turns = []
+        for i, turn in enumerate(req.conversation_history):
+            u = turn.user if hasattr(turn, "user") else turn.get("user", "")
+            a = turn.assistant if hasattr(turn, "assistant") else turn.get("assistant", "")
+            turns.append(f"[Giliran {i+1}] Dokter: {u[:200]} | AI: {a[:200]}")
+        session_memory = "\nMEMORI SESI (riwayat analisis):\n" + "\n".join(turns)
 
-    # Tambah riwayat chat sebelumnya (kecuali pesan terakhir yang baru masuk)
-    prior_history = (req.chat_history or [])[:-1]  # Exclude pesan terakhir (sudah di req.pesan)
-    for turn in prior_history:
-        role_map = "user" if (turn.role if hasattr(turn, "role") else turn["role"]) == "dokter" else "assistant"
-        content = turn.content if hasattr(turn, "content") else turn["content"]
-        messages.append({"role": role_map, "content": content})
+    messages = [{"role": "system", "content": system_prompt + "\n\n" + context_block + session_memory}]
 
-    # Pesan terbaru dari dokter
+    # Riwayat chat sebelumnya (exclude pesan terakhir yang ada di req.pesan)
+    prior = (req.chat_history or [])[:-1]
+    for turn in prior:
+        role = turn.role if hasattr(turn, "role") else turn.get("role", "dokter")
+        msg = turn.content if hasattr(turn, "content") else turn.get("content", "")
+        messages.append({"role": "user" if role == "dokter" else "assistant", "content": msg})
+
+    # Pesan terbaru dokter
     messages.append({"role": "user", "content": req.pesan})
 
     response = client.chat.completions.create(

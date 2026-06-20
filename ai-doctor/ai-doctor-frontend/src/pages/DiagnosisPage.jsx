@@ -164,6 +164,9 @@ export default function DiagnosisPage() {
           save_visit: false,
           conversation_history: historyToSend,
           chat_konsultasi: chatHistory,
+          // Gambar pendukung keluhan — dikirim sekaligus ke prompt utama
+          image_base64: imageBase64 || null,
+          image_type: imageType,
         }),
       });
       if (!response.ok) throw new Error("Gagal terhubung ke server backend");
@@ -183,6 +186,8 @@ export default function DiagnosisPage() {
       setAiResult(data);
       setCatatanLanjutan("");
       if (data.db_patient_id) setDbPatientId(data.db_patient_id);
+      // Simpan path gambar dari response (gambar sudah disimpan di backend)
+      if (data.saved_image_path) setSavedImagePath(data.saved_image_path);
     } catch (err) {
       alert("Terjadi kesalahan sistem: " + err.message);
     } finally {
@@ -328,7 +333,7 @@ export default function DiagnosisPage() {
           name: patient.name,
           age: parseInt(patient.age),
           gender: patient.gender,
-          // Konteks chat: hasil diagnosis yang sudah ada (bukan form gejala)
+          // Konteks: hasil diagnosis sesi ini
           diagnosis_context: aiResult
             ? {
                 penyakit: aiResult.penyakit,
@@ -336,8 +341,11 @@ export default function DiagnosisPage() {
                 rekomendasi: aiResult.rekomendasi,
                 saran_pemeriksaan: aiResult.saran_pemeriksaan,
                 tanda_bahaya: aiResult.tanda_bahaya,
+                kelengkapan_data: aiResult.kelengkapan_data,
               }
             : null,
+          // Memori sesi: riwayat analisis multi-giliran
+          conversation_history: conversationHistory,
           chat_history: newChatHistory,
           pesan: pesanDokter,
         }),
@@ -674,18 +682,8 @@ export default function DiagnosisPage() {
                             <p className="text-xs text-gray-500">
                               Foto terpilih
                             </p>
-                            <button
-                              onClick={handleAnalisisGambar}
-                              disabled={isAnalyzingImage}
-                              className={`text-xs font-semibold py-1.5 px-3 rounded-lg transition w-fit ${
-                                isAnalyzingImage
-                                  ? "bg-gray-200 text-gray-400"
-                                  : "bg-indigo-600 hover:bg-indigo-700 text-white"
-                              }`}
-                            >
-                              {isAnalyzingImage
-                                ? "⏳ Menganalisis..."
-                                : "🔬 Analisis Gambar"}
+                            <button className="text-xs text-indigo-600 bg-indigo-50 border border-indigo-200 py-1.5 px-3 rounded-lg w-fit font-medium">
+                              ✅ Foto akan dianalisis bersama klik Analisis AI
                             </button>
                             <button
                               onClick={handleHapusGambar}
