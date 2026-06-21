@@ -613,24 +613,59 @@ def generate_pdf_report(visit_data: dict, patient_data: dict) -> str:
         story.append(tb_tbl)
         story.append(Spacer(1, 8))
 
-    # ===== 5. ANALISIS FOTO (jika ada) =====
-    if visit_data.get('analisis_gambar'):
-        story.append(Paragraph(f"{section_num}. Analisis Foto / Temuan Fisik", s_h2))
+    # ===== 5. FOTO & ANALISIS (jika ada) =====
+    image_path = visit_data.get('image_path') or ''
+    has_image_file = image_path and os.path.isfile(image_path)
+    has_image_analysis = bool(visit_data.get('analisis_gambar'))
+
+    if has_image_file or has_image_analysis:
+        story.append(Paragraph(f"{section_num}. Foto & Analisis Temuan Fisik", s_h2))
         story.append(HRFlowable(width="100%", thickness=0.5, color=LGRAY, spaceAfter=6))
-        try:
-            img_result = json.loads(visit_data['analisis_gambar'])
-            img_fields = [
-                ("Deskripsi Visual",    img_result.get('deskripsi_gambar', '-')),
-                ("Kemungkinan Temuan",  img_result.get('kemungkinan_temuan', '-')),
-                ("Rekomendasi Lanjut",  img_result.get('rekomendasi_lanjut', '-')),
-                ("Catatan",             img_result.get('catatan', '-')),
-            ]
-            for label, val in img_fields:
-                if val and val != '-':
-                    story.append(Paragraph(f"<b>{label}:</b>", s_body_bold))
-                    story.append(Paragraph(val, s_body))
-        except:
-            story.append(Paragraph(visit_data['analisis_gambar'], s_body))
+
+        # Foto: tampilkan di atas, analisis teks di bawah
+        if has_image_file:
+            try:
+                from reportlab.platypus import Image as RLImage
+                from PIL import Image as PILImage
+
+                pil_img = PILImage.open(image_path)
+                orig_w, orig_h = pil_img.size
+
+                # Max lebar 10cm atau penuh jika landscape, tinggi proporsional max 8cm
+                MAX_W = 10 * cm
+                MAX_H = 8 * cm
+                ratio = orig_h / orig_w if orig_w > 0 else 1
+                img_w = MAX_W
+                img_h = img_w * ratio
+                if img_h > MAX_H:
+                    img_h = MAX_H
+                    img_w = img_h / ratio
+
+                story.append(Paragraph("<b>Foto Pendukung Gejala:</b>", s_body_bold))
+                story.append(Spacer(1, 4))
+                story.append(RLImage(image_path, width=img_w, height=img_h))
+                story.append(Spacer(1, 8))
+
+            except Exception as e:
+                story.append(Paragraph(f"<i>[Foto tidak dapat ditampilkan: {e}]</i>", s_body))
+
+        # Analisis teks dari AI — selalu tampil jika ada, baik dengan atau tanpa foto
+        if has_image_analysis:
+            try:
+                img_result = json.loads(visit_data['analisis_gambar'])
+                img_fields = [
+                    ("Deskripsi Visual",   img_result.get('deskripsi_gambar', '')),
+                    ("Kemungkinan Temuan", img_result.get('kemungkinan_temuan', '')),
+                    ("Rekomendasi Lanjut", img_result.get('rekomendasi_lanjut', '')),
+                    ("Catatan",            img_result.get('catatan', '')),
+                ]
+                story.append(Paragraph("<b>Analisis AI Terhadap Foto:</b>", s_body_bold))
+                for label, val in img_fields:
+                    if val and val not in ('-', ''):
+                        story.append(Paragraph(f"• <b>{label}:</b> {val}", s_bullet))
+            except Exception:
+                story.append(Paragraph(visit_data['analisis_gambar'], s_body))
+
         story.append(Spacer(1, 8))
 
     # ===== FOOTER =====
@@ -739,12 +774,35 @@ def get_history(patient_id: int):
                     "chat_history": json.loads(v.chat_history) if v.chat_history else [],
                     "analisis_gambar": v.analisis_gambar or "",
                     "has_image": bool(v.image_path),
+                    "image_url": f"/api/image/{v.id}" if v.image_path and os.path.isfile(v.image_path) else None,
                     "created_at": v.created_at or "",
                     "pdf_path": v.pdf_path or "",
                 }
                 for v in reversed(visits)
             ]
         }
+    finally:
+        db.close()
+
+
+# ==========================================
+# ENDPOINT: Serve gambar berdasarkan visit_id
+# ==========================================
+@app.get("/api/image/{visit_id}")
+def get_image(visit_id: int):
+    db = SessionLocal()
+    try:
+        visit = db.query(DBVisit).filter(DBVisit.id == visit_id).first()
+        if not visit or not visit.image_path:
+            return {"error": "Gambar tidak ditemukan"}
+        if not os.path.isfile(visit.image_path):
+            return {"error": "File gambar tidak ada di server"}
+        # Deteksi media type dari ekstensi
+        ext = visit.image_path.rsplit('.', 1)[-1].lower()
+        media_types = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
+                       "png": "image/png", "webp": "image/webp", "gif": "image/gif"}
+        media_type = media_types.get(ext, "image/jpeg")
+        return FileResponse(path=visit.image_path, media_type=media_type)
     finally:
         db.close()
 
@@ -846,6 +904,30 @@ def save_visit(req: SaveVisitRequest):
 
 
 # ==========================================
+# ENDPOINT: Serve foto visit
+# ==========================================
+@app.get("/api/visit-image/{visit_id}")
+def get_visit_image(visit_id: int):
+    """Return file foto yang tersimpan untuk kunjungan tertentu."""
+    db = SessionLocal()
+    try:
+        visit = db.query(DBVisit).filter(DBVisit.id == visit_id).first()
+        if not visit or not visit.image_path:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=404, content={"error": "Tidak ada foto"})
+        if not os.path.isfile(visit.image_path):
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=404, content={"error": "File tidak ditemukan"})
+        ext = visit.image_path.rsplit(".", 1)[-1].lower()
+        media_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
+                     "png": "image/png", "webp": "image/webp", "gif": "image/gif"}
+        media_type = media_map.get(ext, "image/jpeg")
+        return FileResponse(path=visit.image_path, media_type=media_type)
+    finally:
+        db.close()
+
+
+# ==========================================
 # ENDPOINT BARU: Generate PDF
 # ==========================================
 @app.get("/api/generate-pdf/{visit_id}")
@@ -872,6 +954,7 @@ def generate_pdf(visit_id: int):
             "icd10_codes": visit.icd10_codes,
             "rekomendasi_terpilih": visit.rekomendasi_terpilih,
             "analisis_gambar": visit.analisis_gambar,
+            "image_path": visit.image_path or "",
             "kelengkapan_data": "",
         }
         patient_data = {

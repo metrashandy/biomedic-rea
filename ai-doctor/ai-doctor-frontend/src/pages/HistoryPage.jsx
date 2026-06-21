@@ -317,30 +317,58 @@ export default function HistoryPage() {
                       </div>
                     )}
 
-                    {/* Analisis Gambar */}
-                    {analisisGambar && (
-                      <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
-                        <p className="text-xs font-bold text-indigo-700 uppercase tracking-wide mb-2">
-                          📸 Analisis Foto / Temuan Fisik
+                    {/* Foto + Analisis Gambar */}
+                    {(v.has_image || analisisGambar) && (
+                      <div className="border border-gray-200 rounded-lg p-3 flex flex-col gap-3">
+                        <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">
+                          📸 Foto & Analisis Temuan Fisik
                         </p>
-                        {[
-                          ["Deskripsi Visual", analisisGambar.deskripsi_gambar],
-                          [
-                            "Kemungkinan Temuan",
-                            analisisGambar.kemungkinan_temuan,
-                          ],
-                          ["Rekomendasi", analisisGambar.rekomendasi_lanjut],
-                        ].map(
-                          ([label, val]) =>
-                            val && (
-                              <div key={label} className="mb-1.5">
-                                <p className="text-xs font-semibold text-indigo-600">
-                                  {label}
-                                </p>
-                                <p className="text-xs text-indigo-900">{val}</p>
-                              </div>
-                            ),
-                        )}
+
+                        <div className="flex gap-4 items-start">
+                          {/* Foto aktual — load dari /api/visit-image/{visit_id} */}
+                          {v.has_image && (
+                            <img
+                              src={`http://localhost:8000/api/visit-image/${v.id}`}
+                              alt="Foto temuan fisik"
+                              className="w-36 h-36 object-cover rounded border border-gray-200 bg-gray-50 flex-shrink-0"
+                              onError={(e) => {
+                                e.target.style.display = "none";
+                              }}
+                            />
+                          )}
+
+                          {/* Hasil analisis AI */}
+                          {analisisGambar && (
+                            <div className="flex-1 flex flex-col gap-1.5">
+                              {[
+                                [
+                                  "Deskripsi Visual",
+                                  analisisGambar.deskripsi_gambar,
+                                ],
+                                [
+                                  "Kemungkinan Temuan",
+                                  analisisGambar.kemungkinan_temuan,
+                                ],
+                                [
+                                  "Rekomendasi Lanjut",
+                                  analisisGambar.rekomendasi_lanjut,
+                                ],
+                                ["Catatan", analisisGambar.catatan],
+                              ]
+                                .filter(([, val]) => val && val !== "-")
+                                .map(([label, val]) => (
+                                  <div key={label}>
+                                    <p className="text-xs font-semibold text-gray-600">
+                                      {label}
+                                    </p>
+                                    <p className="text-xs text-gray-800 leading-relaxed">
+                                      {val}
+                                    </p>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
 

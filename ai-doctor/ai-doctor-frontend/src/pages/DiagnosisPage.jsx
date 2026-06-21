@@ -35,19 +35,16 @@ export default function DiagnosisPage() {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [dbPatientId, setDbPatientId] = useState(patient.id || null);
 
-  // Riwayat multi-giliran
   const [conversationHistory, setConversationHistory] = useState([]);
   const [memoryChecks, setMemoryChecks] = useState(null);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
   const [lastSnapshot, setLastSnapshot] = useState(null);
 
-  // ===== CHAT — endpoint terpisah, konteks = hasil diagnosis =====
   const [chatHistory, setChatHistory] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
   const chatBottomRef = useRef(null);
 
-  // ===== GAMBAR (inline di form, pendukung gejala) =====
   const [imageBase64, setImageBase64] = useState(null);
   const [imageType, setImageType] = useState("image/jpeg");
   const [imagePreview, setImagePreview] = useState(null);
@@ -55,7 +52,6 @@ export default function DiagnosisPage() {
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
   const [savedImagePath, setSavedImagePath] = useState("");
 
-  // Catatan lanjutan (di bawah hasil AI)
   const [catatanLanjutan, setCatatanLanjutan] = useState("");
 
   const memoryCount = memoryChecks
@@ -84,9 +80,6 @@ export default function DiagnosisPage() {
     }
   }, [chatHistory]);
 
-  // =============================================
-  // Build history untuk analisis lanjutan
-  // =============================================
   const buildHistoryToSend = (currentHistory, snapshot) => {
     if (!snapshot) return [...currentHistory];
     const {
@@ -128,9 +121,6 @@ export default function DiagnosisPage() {
     ];
   };
 
-  // =============================================
-  // Analisis Utama
-  // =============================================
   const handleAnalisis = async () => {
     if (!formData.keluhan) return alert("Keluhan utama harus diisi!");
     const formSnapshot = { ...formData };
@@ -164,7 +154,6 @@ export default function DiagnosisPage() {
           save_visit: false,
           conversation_history: historyToSend,
           chat_konsultasi: chatHistory,
-          // Gambar pendukung keluhan — dikirim sekaligus ke prompt utama
           image_base64: imageBase64 || null,
           image_type: imageType,
         }),
@@ -186,7 +175,6 @@ export default function DiagnosisPage() {
       setAiResult(data);
       setCatatanLanjutan("");
       if (data.db_patient_id) setDbPatientId(data.db_patient_id);
-      // Simpan path gambar dari response (gambar sudah disimpan di backend)
       if (data.saved_image_path) setSavedImagePath(data.saved_image_path);
     } catch (err) {
       alert("Terjadi kesalahan sistem: " + err.message);
@@ -195,9 +183,6 @@ export default function DiagnosisPage() {
     }
   };
 
-  // =============================================
-  // Ulangi Diagnosis
-  // =============================================
   const handleUlangi = async () => {
     if (!formData.keluhan) return alert("Keluhan utama harus diisi!");
     setIsLoading(true);
@@ -246,9 +231,6 @@ export default function DiagnosisPage() {
     }
   };
 
-  // =============================================
-  // Lanjutkan analisis dengan catatan baru
-  // =============================================
   const handleLanjutkanAnalisis = async () => {
     if (!catatanLanjutan.trim())
       return alert("Isi catatan lanjutan terlebih dahulu!");
@@ -309,9 +291,6 @@ export default function DiagnosisPage() {
     }
   };
 
-  // =============================================
-  // CHAT — endpoint khusus, kirim history diagnosis sebagai konteks
-  // =============================================
   const handleKirimChat = async () => {
     if (!chatInput.trim()) return;
     const pesanDokter = chatInput.trim();
@@ -333,7 +312,6 @@ export default function DiagnosisPage() {
           name: patient.name,
           age: parseInt(patient.age),
           gender: patient.gender,
-          // Konteks: hasil diagnosis sesi ini
           diagnosis_context: aiResult
             ? {
                 penyakit: aiResult.penyakit,
@@ -344,7 +322,6 @@ export default function DiagnosisPage() {
                 kelengkapan_data: aiResult.kelengkapan_data,
               }
             : null,
-          // Memori sesi: riwayat analisis multi-giliran
           conversation_history: conversationHistory,
           chat_history: newChatHistory,
           pesan: pesanDokter,
@@ -363,9 +340,6 @@ export default function DiagnosisPage() {
     }
   };
 
-  // =============================================
-  // Upload Gambar (inline di form)
-  // =============================================
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -417,9 +391,6 @@ export default function DiagnosisPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // =============================================
-  // Simpan ke DB
-  // =============================================
   const handleSimpan = async () => {
     if (!aiResult) return;
     setIsSaving(true);
@@ -477,9 +448,6 @@ export default function DiagnosisPage() {
     }
   };
 
-  // =============================================
-  // Generate PDF
-  // =============================================
   const handleGeneratePdf = async () => {
     if (!savedVisitId) return;
     setIsGeneratingPdf(true);
@@ -502,9 +470,6 @@ export default function DiagnosisPage() {
     }
   };
 
-  // =============================================
-  // Sesi Baru
-  // =============================================
   const handleNewSession = () => {
     if (
       conversationHistory.length > 0 &&
@@ -546,9 +511,11 @@ export default function DiagnosisPage() {
     );
   };
 
+  const hasSaran = (aiResult?.saran_pemeriksaan?.length || 0) > 0;
+  const resultColCount = 2 + (hasSaran ? 1 : 0);
+
   return (
-    <div className="min-h-screen bg-gray-100 p-6 max-w-6xl mx-auto flex flex-col gap-6">
-      {/* ===== HEADER PASIEN ===== */}
+    <div className="min-h-screen bg-gray-100 p-6 max-w-7xl mx-auto flex flex-col gap-6">
       <div className="bg-white rounded-xl shadow-sm p-6 flex flex-col md:flex-row justify-between items-start md:items-center border-l-4 border-blue-600 gap-4">
         <div>
           <h2 className="text-xl font-bold text-gray-800">
@@ -605,16 +572,13 @@ export default function DiagnosisPage() {
         </div>
       </div>
 
-      {/* ===== LAYOUT UTAMA: 2 KOLOM ===== */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* ===== KOLOM KIRI: INPUT (3/5) ===== */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
         <div className="lg:col-span-3 flex flex-col gap-5">
           <div className="bg-white rounded-xl shadow-sm p-6">
             <h3 className="text-base font-bold text-gray-800 border-b pb-3 mb-5">
               📋 Data Klinis & Pemeriksaan
             </h3>
             <div className="flex flex-col gap-5">
-              {/* 1. Anamnesis */}
               <div>
                 <h4 className="font-semibold text-blue-700 bg-blue-50 p-2 rounded text-sm mb-3">
                   1. Anamnesis
@@ -650,7 +614,6 @@ export default function DiagnosisPage() {
                     />
                   </div>
 
-                  {/* ===== FOTO PENDUKUNG — tepat di bawah gejala ===== */}
                   <div className="border border-gray-200 rounded-xl p-3 bg-gray-50">
                     <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1.5">
                       📸 Foto Pendukung Gejala
@@ -660,7 +623,6 @@ export default function DiagnosisPage() {
                     </p>
 
                     {!imagePreview ? (
-                      /* Area upload kosong — kecil, tidak dominan */
                       <div
                         className="border border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/40 transition"
                         onClick={() => fileInputRef.current?.click()}
@@ -671,7 +633,6 @@ export default function DiagnosisPage() {
                       </div>
                     ) : (
                       <div className="flex flex-col gap-2">
-                        {/* Preview + hapus */}
                         <div className="flex gap-3 items-start">
                           <img
                             src={imagePreview}
@@ -694,7 +655,6 @@ export default function DiagnosisPage() {
                           </div>
                         </div>
 
-                        {/* Hasil analisis gambar — muncul di bawah preview, tetap di dalam form */}
                         {imageAnalysis && (
                           <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col gap-1.5">
                             <p className="text-xs font-bold text-indigo-700">
@@ -737,7 +697,6 @@ export default function DiagnosisPage() {
                     />
                   </div>
 
-                  {/* Alergi & Riwayat */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -771,7 +730,6 @@ export default function DiagnosisPage() {
                 </div>
               </div>
 
-              {/* 2. Pemeriksaan Fisik & Lab */}
               <div>
                 <h4 className="font-semibold text-emerald-700 bg-emerald-50 p-2 rounded text-sm mb-3">
                   2. Pemeriksaan Fisik & Lab
@@ -808,7 +766,6 @@ export default function DiagnosisPage() {
                 </div>
               </div>
 
-              {/* 3. Catatan Bebas */}
               <div>
                 <h4 className="font-semibold text-violet-700 bg-violet-50 p-2 rounded text-sm mb-2 flex items-center gap-2">
                   3. Catatan Bebas
@@ -857,8 +814,9 @@ export default function DiagnosisPage() {
               </button>
             </div>
           </div>
+        </div>
 
-          {/* ===== CHAT KONSULTASI — di bawah form, kirim ke /api/chat ===== */}
+        <div className="lg:col-span-2 lg:sticky lg:top-4">
           <div className="bg-white rounded-xl shadow-sm p-5">
             <h3 className="text-base font-bold text-gray-800 border-b pb-3 mb-4 flex items-center gap-2">
               💬 Chat Konsultasi
@@ -869,15 +827,14 @@ export default function DiagnosisPage() {
               )}
             </h3>
 
-            {/* Area chat */}
-            <div className="bg-gray-50 rounded-xl border border-gray-200 p-3 min-h-[180px] max-h-80 overflow-y-auto flex flex-col gap-2 mb-3">
+            <div className="bg-gray-50 rounded-xl border border-gray-200 p-3 min-h-[180px] max-h-[28rem] overflow-y-auto flex flex-col gap-2 mb-3">
               {chatHistory.length === 0 ? (
                 <div className="flex items-center justify-center h-32 text-center">
                   <div className="text-gray-400">
                     <div className="text-3xl mb-1">💬</div>
                     <p className="text-xs">
                       {aiResult
-                        ? "Tanyakan apa saja seputar hasil diagnosis di atas."
+                        ? "Tanyakan apa saja seputar hasil diagnosis di bawah."
                         : "Lakukan analisis AI terlebih dahulu, lalu chat untuk tanya-jawab lanjutan."}
                     </p>
                   </div>
@@ -956,346 +913,340 @@ export default function DiagnosisPage() {
             </div>
             <p className="text-xs text-gray-400 mt-1.5">
               💡 Chat ini menggunakan konteks hasil diagnosis yang sudah muncul
-              di sebelah kanan
+              di bawah
             </p>
-          </div>
-        </div>
-
-        {/* ===== KOLOM KANAN: OUTPUT AI (2/5) ===== */}
-        <div className="lg:col-span-2 flex flex-col gap-5" ref={bottomRef}>
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 sticky top-4">
-            <h3 className="text-base font-bold text-gray-800 mb-4 border-b pb-3">
-              🤖 Hasil Analisis AI
-            </h3>
-
-            {isLoading ? (
-              <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-                <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-3"></div>
-                <p className="text-sm font-medium animate-pulse">
-                  Menganalisis data klinis...
-                </p>
-              </div>
-            ) : aiResult ? (
-              <div className="flex flex-col gap-4">
-                {/* Kelengkapan data */}
-                {aiResult.kelengkapan_data && (
-                  <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
-                    <p className="text-xs font-semibold text-blue-700 mb-0.5">
-                      📊 Status Data
-                    </p>
-                    <p className="text-xs text-blue-900">
-                      {aiResult.kelengkapan_data}
-                    </p>
-                  </div>
-                )}
-
-                {/* Diagnosis */}
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                  <h4 className="font-bold text-red-800 mb-2 text-sm flex items-center gap-1.5">
-                    🔍 Kemungkinan Diagnosis
-                  </h4>
-                  <p className="text-red-900 text-xs leading-relaxed">
-                    {aiResult.penyakit}
-                  </p>
-                </div>
-
-                {/* Pertanyaan Lanjutan */}
-                {aiResult.pertanyaan_lanjutan?.length > 0 && (
-                  <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
-                    <h4 className="font-bold text-sky-800 mb-2 text-sm flex items-center gap-1.5">
-                      ❓ Pertanyaan Lanjutan
-                    </h4>
-                    <ul className="space-y-1">
-                      {aiResult.pertanyaan_lanjutan.map((q, i) => (
-                        <li
-                          key={i}
-                          className="text-xs text-sky-900 flex items-start gap-1.5"
-                        >
-                          <span className="text-sky-400 flex-shrink-0 mt-0.5">
-                            •
-                          </span>{" "}
-                          {q}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* ICD-10 */}
-                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-                  <h4 className="font-bold text-purple-800 mb-2 text-sm">
-                    📋 Kode ICD-10
-                  </h4>
-                  <div className="space-y-1.5">
-                    {(aiResult.icd10 || []).map((item, idx) => (
-                      <div key={idx} className="flex items-start gap-2">
-                        <span className="font-mono font-bold text-purple-700 text-xs bg-purple-100 px-1.5 py-0.5 rounded flex-shrink-0">
-                          {item.kode}
-                        </span>
-                        <span className="text-purple-900 text-xs leading-relaxed">
-                          {item.label}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Rekomendasi */}
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                  <h4 className="font-bold text-emerald-800 mb-2 text-sm">
-                    💊 Rekomendasi Terapi
-                  </h4>
-                  <ul className="space-y-1">
-                    {(aiResult.rekomendasi || []).map((rek, idx) => (
-                      <li
-                        key={idx}
-                        className="text-xs text-emerald-900 flex items-start gap-1.5 leading-relaxed"
-                      >
-                        <span className="text-emerald-400 flex-shrink-0 mt-0.5">
-                          •
-                        </span>{" "}
-                        {rek}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {/* Saran Pemeriksaan */}
-                {aiResult.saran_pemeriksaan?.length > 0 && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                    <h4 className="font-bold text-amber-800 mb-2 text-sm">
-                      🔬 Saran Pemeriksaan Lanjutan
-                    </h4>
-                    <ul className="space-y-1">
-                      {aiResult.saran_pemeriksaan.map((s, i) => (
-                        <li
-                          key={i}
-                          className="text-xs text-amber-900 flex items-start gap-1.5 leading-relaxed"
-                        >
-                          <span className="text-amber-500 flex-shrink-0 font-semibold">
-                            {i + 1}.
-                          </span>{" "}
-                          {s}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* Tanda Bahaya */}
-                {aiResult.tanda_bahaya && (
-                  <div className="bg-red-100 border-2 border-red-400 rounded-xl p-4">
-                    <h4 className="font-bold text-red-800 mb-1.5 text-sm">
-                      ⚠️ Tanda Bahaya
-                    </h4>
-                    <p className="text-red-900 text-xs leading-relaxed">
-                      {aiResult.tanda_bahaya}
-                    </p>
-                  </div>
-                )}
-
-                {/* Selective Memory */}
-                {memoryChecks && (
-                  <div className="border border-amber-200 bg-amber-50 rounded-xl p-3">
-                    <button
-                      onClick={() => setShowMemoryPanel(!showMemoryPanel)}
-                      className="flex items-center gap-2 w-full text-left"
-                    >
-                      <span className="text-xs font-semibold text-amber-800">
-                        🧠 Pilih untuk disimpan ({memoryCount} aktif)
-                      </span>
-                      <span className="ml-auto text-amber-500 text-xs">
-                        {showMemoryPanel ? "▲" : "▼"}
-                      </span>
-                    </button>
-                    {showMemoryPanel && (
-                      <div className="mt-3 flex flex-col gap-3">
-                        <div>
-                          <p className="text-xs font-bold text-purple-700 mb-1.5">
-                            Kode ICD-10
-                          </p>
-                          <div className="space-y-1.5">
-                            {(aiResult.icd10 || []).map((item, idx) => (
-                              <label
-                                key={idx}
-                                className="flex items-start gap-2 cursor-pointer"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={memoryChecks.icd10[idx] || false}
-                                  onChange={() => updateIcd10Check(idx)}
-                                  className="mt-0.5 accent-purple-600 w-4 h-4 flex-shrink-0"
-                                />
-                                <span className="text-xs text-gray-700">
-                                  <span className="font-mono font-bold text-purple-700">
-                                    {item.kode}
-                                  </span>{" "}
-                                  — {item.label}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold text-emerald-700 mb-1.5">
-                            Rekomendasi Terapi
-                          </p>
-                          <div className="space-y-1.5">
-                            {(aiResult.rekomendasi || []).map((rek, idx) => (
-                              <label
-                                key={idx}
-                                className="flex items-start gap-2 cursor-pointer"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={
-                                    memoryChecks.rekomendasi[idx] || false
-                                  }
-                                  onChange={() => updateRekomendasiCheck(idx)}
-                                  className="mt-0.5 accent-emerald-600 w-4 h-4 flex-shrink-0"
-                                />
-                                <span className="text-xs text-gray-700 leading-relaxed">
-                                  {rek}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Catatan Lanjutan */}
-                <div className="border border-sky-200 bg-sky-50 rounded-xl p-4">
-                  <h4 className="font-semibold text-sky-800 mb-1 text-sm">
-                    📝 Catatan Lanjutan
-                  </h4>
-                  <p className="text-xs text-sky-600 mb-2">
-                    Tambah info baru → AI perbarui analisis dengan konteks ini.
-                  </p>
-                  <textarea
-                    className="w-full border border-sky-200 rounded-lg p-2.5 text-xs outline-none focus:border-sky-500 min-h-[65px] bg-white"
-                    placeholder="Contoh: Pasien sebut demam naik turun, berkeringat malam, sudah 5 hari..."
-                    value={catatanLanjutan}
-                    onChange={(e) => setCatatanLanjutan(e.target.value)}
-                  />
-                  <button
-                    onClick={handleLanjutkanAnalisis}
-                    disabled={isLoading || !catatanLanjutan.trim()}
-                    className="mt-2 w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold py-2.5 rounded-lg transition disabled:opacity-40"
-                  >
-                    🔄 Lanjutkan Analisis
-                  </button>
-                </div>
-
-                {/* Disclaimer */}
-                <p className="text-xs text-gray-500 text-center bg-gray-50 py-2.5 rounded-lg border border-gray-100">
-                  ⚠️ Hasil AI hanya sebagai Clinical Decision Support. Keputusan
-                  medis mutlak tanggung jawab dokter.
-                </p>
-
-                {/* Tombol Aksi */}
-                {!isSaving ? (
-                  <div className="flex flex-col gap-2">
-                    <button
-                      onClick={handleSimpan}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition shadow text-sm"
-                    >
-                      💾 Simpan ke Riwayat
-                    </button>
-                    <button
-                      onClick={handleUlangi}
-                      disabled={isLoading}
-                      className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl transition shadow text-sm disabled:opacity-50"
-                    >
-                      🔄 Ulangi Diagnosis
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center py-3 gap-2 text-gray-500 text-sm">
-                    <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-                    Menyimpan...
-                  </div>
-                )}
-
-                {/* Sukses + PDF */}
-                {savedSuccess && (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex flex-col gap-3">
-                    <p className="text-center text-emerald-700 font-semibold text-sm">
-                      ✅ Kunjungan berhasil disimpan!
-                    </p>
-                    <button
-                      onClick={handleGeneratePdf}
-                      disabled={isGeneratingPdf}
-                      className={`w-full font-bold py-3 rounded-xl transition shadow text-sm ${
-                        isGeneratingPdf
-                          ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                          : "bg-blue-600 hover:bg-blue-700 text-white"
-                      }`}
-                    >
-                      {isGeneratingPdf
-                        ? "⏳ Membuat PDF..."
-                        : "📄 Download Laporan PDF"}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-gray-400 text-center">
-                <svg
-                  className="w-14 h-14 mb-3 text-gray-200"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-                  />
-                </svg>
-                <p className="text-sm">
-                  Hasil analisis AI akan muncul di sini.
-                </p>
-                <p className="text-xs mt-1">
-                  Lengkapi form di kiri dan klik Analisis AI.
-                </p>
-              </div>
-            )}
           </div>
         </div>
       </div>
 
-      {/* Konteks Sesi Aktif */}
-      {conversationHistory.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-amber-400">
-          <p className="text-sm font-bold text-amber-700 mb-2 flex items-center gap-2">
-            🧠 Konteks Sesi Aktif
-            <span className="font-normal text-amber-600 text-xs">
-              ({conversationHistory.length} giliran)
-            </span>
-          </p>
-          <div className="space-y-1.5 max-h-28 overflow-y-auto">
-            {conversationHistory.map((turn, idx) => (
-              <div
-                key={idx}
-                className="text-xs bg-amber-50 border border-amber-100 rounded-lg p-2"
-              >
-                <span className="font-semibold text-blue-600">
-                  Giliran #{idx + 1}:
-                </span>{" "}
-                <span className="text-gray-600">
-                  {turn.user.length > 120
-                    ? turn.user.slice(0, 120) + "..."
-                    : turn.user}
-                </span>
-              </div>
-            ))}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5" ref={bottomRef}>
+        <h3 className="text-base font-bold text-gray-800 mb-4 border-b pb-3">
+          🤖 Hasil Analisis AI
+        </h3>
+
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+            <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+            <p className="text-sm font-medium animate-pulse">
+              Menganalisis data klinis...
+            </p>
           </div>
-        </div>
-      )}
+        ) : aiResult ? (
+          <div className="flex flex-col gap-4">
+            {aiResult.kelengkapan_data && (
+              <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                <p className="text-xs font-semibold text-blue-700 mb-0.5">
+                  📊 Status Data
+                </p>
+                <p className="text-xs text-blue-900">
+                  {aiResult.kelengkapan_data}
+                </p>
+              </div>
+            )}
+
+            {conversationHistory.length > 0 && (
+              <div className="bg-white rounded-xl border-l-4 border-amber-400 border border-gray-200 p-4">
+                <p className="text-sm font-bold text-amber-700 mb-2 flex items-center gap-2">
+                  🧠 Konteks Sesi Aktif
+                  <span className="font-normal text-amber-600 text-xs">
+                    ({conversationHistory.length} giliran)
+                  </span>
+                </p>
+                <div className="space-y-1.5 max-h-28 overflow-y-auto">
+                  {conversationHistory.map((turn, idx) => (
+                    <div
+                      key={idx}
+                      className="text-xs bg-amber-50 border border-amber-100 rounded-lg p-2"
+                    >
+                      <span className="font-semibold text-blue-600">
+                        Giliran #{idx + 1}:
+                      </span>{" "}
+                      <span className="text-gray-600">
+                        {turn.user.length > 120
+                          ? turn.user.slice(0, 120) + "..."
+                          : turn.user}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+              <h4 className="font-bold text-red-800 mb-2 text-sm flex items-center gap-1.5">
+                🔍 Kemungkinan Diagnosis
+              </h4>
+              <p className="text-red-900 text-xs leading-relaxed">
+                {aiResult.penyakit}
+              </p>
+            </div>
+
+            {aiResult.pertanyaan_lanjutan?.length > 0 && (
+              <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
+                <h4 className="font-bold text-sky-800 mb-2 text-sm flex items-center gap-1.5">
+                  ❓ Pertanyaan Lanjutan
+                </h4>
+                <ul className="space-y-1">
+                  {aiResult.pertanyaan_lanjutan.map((q, i) => (
+                    <li
+                      key={i}
+                      className="text-xs text-sky-900 flex items-start gap-1.5"
+                    >
+                      <span className="text-sky-400 flex-shrink-0 mt-0.5">
+                        •
+                      </span>{" "}
+                      {q}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div
+              className={`grid grid-cols-1 ${
+                resultColCount === 3
+                  ? "md:grid-cols-3"
+                  : "md:grid-cols-2"
+              } gap-4`}
+            >
+              <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                <h4 className="font-bold text-purple-800 mb-2 text-sm">
+                  📋 Kode ICD-10
+                </h4>
+                <div className="space-y-1.5">
+                  {(aiResult.icd10 || []).map((item, idx) => (
+                    <div key={idx} className="flex items-start gap-2">
+                      <span className="font-mono font-bold text-purple-700 text-xs bg-purple-100 px-1.5 py-0.5 rounded flex-shrink-0">
+                        {item.kode}
+                      </span>
+                      <span className="text-purple-900 text-xs leading-relaxed">
+                        {item.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                <h4 className="font-bold text-emerald-800 mb-2 text-sm">
+                  💊 Rekomendasi Terapi
+                </h4>
+                <ul className="space-y-1">
+                  {(aiResult.rekomendasi || []).map((rek, idx) => (
+                    <li
+                      key={idx}
+                      className="text-xs text-emerald-900 flex items-start gap-1.5 leading-relaxed"
+                    >
+                      <span className="text-emerald-400 flex-shrink-0 mt-0.5">
+                        •
+                      </span>{" "}
+                      {rek}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {hasSaran && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <h4 className="font-bold text-amber-800 mb-2 text-sm">
+                    🔬 Saran Pemeriksaan Lanjutan
+                  </h4>
+                  <ul className="space-y-1">
+                    {aiResult.saran_pemeriksaan.map((s, i) => (
+                      <li
+                        key={i}
+                        className="text-xs text-amber-900 flex items-start gap-1.5 leading-relaxed"
+                      >
+                        <span className="text-amber-500 flex-shrink-0 font-semibold">
+                          {i + 1}.
+                        </span>{" "}
+                        {s}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {aiResult.tanda_bahaya && (
+              <div className="bg-red-100 border-2 border-red-400 rounded-xl p-4">
+                <h4 className="font-bold text-red-800 mb-1.5 text-sm">
+                  ⚠️ Tanda Bahaya
+                </h4>
+                <p className="text-red-900 text-xs leading-relaxed">
+                  {aiResult.tanda_bahaya}
+                </p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {memoryChecks && (
+                <div className="border border-amber-200 bg-amber-50 rounded-xl p-3">
+                  <button
+                    onClick={() => setShowMemoryPanel(!showMemoryPanel)}
+                    className="flex items-center gap-2 w-full text-left"
+                  >
+                    <span className="text-xs font-semibold text-amber-800">
+                      🧠 Pilih untuk disimpan ({memoryCount} aktif)
+                    </span>
+                    <span className="ml-auto text-amber-500 text-xs">
+                      {showMemoryPanel ? "▲" : "▼"}
+                    </span>
+                  </button>
+                  {showMemoryPanel && (
+                    <div className="mt-3 flex flex-col gap-3">
+                      <div>
+                        <p className="text-xs font-bold text-purple-700 mb-1.5">
+                          Kode ICD-10
+                        </p>
+                        <div className="space-y-1.5">
+                          {(aiResult.icd10 || []).map((item, idx) => (
+                            <label
+                              key={idx}
+                              className="flex items-start gap-2 cursor-pointer"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={memoryChecks.icd10[idx] || false}
+                                onChange={() => updateIcd10Check(idx)}
+                                className="mt-0.5 accent-purple-600 w-4 h-4 flex-shrink-0"
+                              />
+                              <span className="text-xs text-gray-700">
+                                <span className="font-mono font-bold text-purple-700">
+                                  {item.kode}
+                                </span>{" "}
+                                — {item.label}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-emerald-700 mb-1.5">
+                          Rekomendasi Terapi
+                        </p>
+                        <div className="space-y-1.5">
+                          {(aiResult.rekomendasi || []).map((rek, idx) => (
+                            <label
+                              key={idx}
+                              className="flex items-start gap-2 cursor-pointer"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={
+                                  memoryChecks.rekomendasi[idx] || false
+                                }
+                                onChange={() => updateRekomendasiCheck(idx)}
+                                className="mt-0.5 accent-emerald-600 w-4 h-4 flex-shrink-0"
+                              />
+                              <span className="text-xs text-gray-700 leading-relaxed">
+                                {rek}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="border border-sky-200 bg-sky-50 rounded-xl p-4">
+                <h4 className="font-semibold text-sky-800 mb-1 text-sm">
+                  📝 Catatan Lanjutan
+                </h4>
+                <p className="text-xs text-sky-600 mb-2">
+                  Tambah info baru → AI perbarui analisis dengan konteks ini.
+                </p>
+                <textarea
+                  className="w-full border border-sky-200 rounded-lg p-2.5 text-xs outline-none focus:border-sky-500 min-h-[65px] bg-white"
+                  placeholder="Contoh: Pasien sebut demam naik turun, berkeringat malam, sudah 5 hari..."
+                  value={catatanLanjutan}
+                  onChange={(e) => setCatatanLanjutan(e.target.value)}
+                />
+                <button
+                  onClick={handleLanjutkanAnalisis}
+                  disabled={isLoading || !catatanLanjutan.trim()}
+                  className="mt-2 w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold py-2.5 rounded-lg transition disabled:opacity-40"
+                >
+                  🔄 Lanjutkan Analisis
+                </button>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-500 text-center bg-gray-50 py-2.5 rounded-lg border border-gray-100">
+              ⚠️ Hasil AI hanya sebagai Clinical Decision Support. Keputusan
+              medis mutlak tanggung jawab dokter.
+            </p>
+
+            {!isSaving ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <button
+                  onClick={handleSimpan}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition shadow text-sm"
+                >
+                  💾 Simpan ke Riwayat
+                </button>
+                <button
+                  onClick={handleUlangi}
+                  disabled={isLoading}
+                  className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl transition shadow text-sm disabled:opacity-50"
+                >
+                  🔄 Ulangi Diagnosis
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center py-3 gap-2 text-gray-500 text-sm">
+                <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                Menyimpan...
+              </div>
+            )}
+
+            {savedSuccess && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex flex-col gap-3">
+                <p className="text-center text-emerald-700 font-semibold text-sm">
+                  ✅ Kunjungan berhasil disimpan!
+                </p>
+                <button
+                  onClick={handleGeneratePdf}
+                  disabled={isGeneratingPdf}
+                  className={`w-full font-bold py-3 rounded-xl transition shadow text-sm ${
+                    isGeneratingPdf
+                      ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                      : "bg-blue-600 hover:bg-blue-700 text-white"
+                  }`}
+                >
+                  {isGeneratingPdf
+                    ? "⏳ Membuat PDF..."
+                    : "📄 Download Laporan PDF"}
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-12 text-gray-400 text-center">
+            <svg
+              className="w-14 h-14 mb-3 text-gray-200"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+              />
+            </svg>
+            <p className="text-sm">
+              Hasil analisis AI akan muncul di sini.
+            </p>
+            <p className="text-xs mt-1">
+              Lengkapi form di atas dan klik Analisis AI.
+            </p>
+          </div>
+        )}
+      </div>
 
       <br />
     </div>
