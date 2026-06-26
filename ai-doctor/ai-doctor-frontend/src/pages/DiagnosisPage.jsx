@@ -35,23 +35,26 @@ export default function DiagnosisPage() {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [dbPatientId, setDbPatientId] = useState(patient.id || null);
 
+  // Riwayat multi-giliran
   const [conversationHistory, setConversationHistory] = useState([]);
   const [memoryChecks, setMemoryChecks] = useState(null);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
   const [lastSnapshot, setLastSnapshot] = useState(null);
 
+  // ===== CHAT — endpoint terpisah, konteks = hasil diagnosis =====
   const [chatHistory, setChatHistory] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
   const chatBottomRef = useRef(null);
 
+  // ===== GAMBAR (inline di form, pendukung gejala) =====
   const [imageBase64, setImageBase64] = useState(null);
   const [imageType, setImageType] = useState("image/jpeg");
   const [imagePreview, setImagePreview] = useState(null);
   const [imageAnalysis, setImageAnalysis] = useState(null);
-  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
   const [savedImagePath, setSavedImagePath] = useState("");
 
+  // Catatan lanjutan (di bawah hasil AI)
   const [catatanLanjutan, setCatatanLanjutan] = useState("");
 
   const memoryCount = memoryChecks
@@ -80,6 +83,9 @@ export default function DiagnosisPage() {
     }
   }, [chatHistory]);
 
+  // =============================================
+  // Build history untuk analisis lanjutan
+  // =============================================
   const buildHistoryToSend = (currentHistory, snapshot) => {
     if (!snapshot) return [...currentHistory];
     const {
@@ -121,6 +127,9 @@ export default function DiagnosisPage() {
     ];
   };
 
+  // =============================================
+  // Analisis Utama
+  // =============================================
   const handleAnalisis = async () => {
     if (!formData.keluhan) return alert("Keluhan utama harus diisi!");
     const formSnapshot = { ...formData };
@@ -154,6 +163,7 @@ export default function DiagnosisPage() {
           save_visit: false,
           conversation_history: historyToSend,
           chat_konsultasi: chatHistory,
+          // Gambar pendukung keluhan — dikirim sekaligus ke prompt utama
           image_base64: imageBase64 || null,
           image_type: imageType,
         }),
@@ -175,6 +185,7 @@ export default function DiagnosisPage() {
       setAiResult(data);
       setCatatanLanjutan("");
       if (data.db_patient_id) setDbPatientId(data.db_patient_id);
+      // Simpan path gambar dari response (gambar sudah disimpan di backend)
       if (data.saved_image_path) setSavedImagePath(data.saved_image_path);
     } catch (err) {
       alert("Terjadi kesalahan sistem: " + err.message);
@@ -183,6 +194,9 @@ export default function DiagnosisPage() {
     }
   };
 
+  // =============================================
+  // Ulangi Diagnosis
+  // =============================================
   const handleUlangi = async () => {
     if (!formData.keluhan) return alert("Keluhan utama harus diisi!");
     setIsLoading(true);
@@ -231,6 +245,9 @@ export default function DiagnosisPage() {
     }
   };
 
+  // =============================================
+  // Lanjutkan analisis dengan catatan baru
+  // =============================================
   const handleLanjutkanAnalisis = async () => {
     if (!catatanLanjutan.trim())
       return alert("Isi catatan lanjutan terlebih dahulu!");
@@ -291,6 +308,9 @@ export default function DiagnosisPage() {
     }
   };
 
+  // =============================================
+  // CHAT — endpoint khusus, kirim history diagnosis sebagai konteks
+  // =============================================
   const handleKirimChat = async () => {
     if (!chatInput.trim()) return;
     const pesanDokter = chatInput.trim();
@@ -312,6 +332,7 @@ export default function DiagnosisPage() {
           name: patient.name,
           age: parseInt(patient.age),
           gender: patient.gender,
+          // Konteks: hasil diagnosis sesi ini
           diagnosis_context: aiResult
             ? {
                 penyakit: aiResult.penyakit,
@@ -322,6 +343,7 @@ export default function DiagnosisPage() {
                 kelengkapan_data: aiResult.kelengkapan_data,
               }
             : null,
+          // Memori sesi: riwayat analisis multi-giliran
           conversation_history: conversationHistory,
           chat_history: newChatHistory,
           pesan: pesanDokter,
@@ -340,46 +362,40 @@ export default function DiagnosisPage() {
     }
   };
 
+  // =============================================
+  // Upload Gambar (inline di form)
+  // =============================================
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    setImageType(file.type || "image/jpeg");
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const result = ev.target.result;
-      setImagePreview(result);
-      setImageBase64(result.split(",")[1]);
-      setImageAnalysis(null);
-    };
-    reader.readAsDataURL(file);
-  };
 
-  const handleAnalisisGambar = async () => {
-    if (!imageBase64) return;
-    setIsAnalyzingImage(true);
-    try {
-      const response = await fetch(`${API}/api/analyze-image`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          patient_id: dbPatientId || null,
-          name: patient.name,
-          age: parseInt(patient.age),
-          gender: patient.gender,
-          keluhan: formData.keluhan,
-          gejala: formData.gejala,
-          image_base64: imageBase64,
-          image_type: imageType,
-        }),
-      });
-      if (!response.ok) throw new Error("Gagal menganalisis gambar");
-      const data = await response.json();
-      setImageAnalysis(data);
-      setSavedImagePath(data.saved_image_path || "");
-    } catch (err) {
-      alert("Error analisis gambar: " + err.message);
-    } finally {
-      setIsAnalyzingImage(false);
+    const isDicom =
+      file.name.toLowerCase().endsWith(".dcm") ||
+      file.type === "application/dicom" ||
+      (file.type === "" && file.name.toLowerCase().endsWith(".dcm"));
+
+    if (isDicom) {
+      setImageType("application/dicom");
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const bytes = new Uint8Array(ev.target.result);
+        let binary = "";
+        bytes.forEach((b) => (binary += String.fromCharCode(b)));
+        setImageBase64(btoa(binary));
+        setImagePreview("dicom");
+        setImageAnalysis(null);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      setImageType(file.type || "image/jpeg");
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const result = ev.target.result;
+        setImagePreview(result);
+        setImageBase64(result.split(",")[1]);
+        setImageAnalysis(null);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -391,6 +407,9 @@ export default function DiagnosisPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  // =============================================
+  // Simpan ke DB
+  // =============================================
   const handleSimpan = async () => {
     if (!aiResult) return;
     setIsSaving(true);
@@ -448,6 +467,9 @@ export default function DiagnosisPage() {
     }
   };
 
+  // =============================================
+  // Generate PDF
+  // =============================================
   const handleGeneratePdf = async () => {
     if (!savedVisitId) return;
     setIsGeneratingPdf(true);
@@ -470,6 +492,9 @@ export default function DiagnosisPage() {
     }
   };
 
+  // =============================================
+  // Sesi Baru
+  // =============================================
   const handleNewSession = () => {
     if (
       conversationHistory.length > 0 &&
@@ -511,11 +536,9 @@ export default function DiagnosisPage() {
     );
   };
 
-  const hasSaran = (aiResult?.saran_pemeriksaan?.length || 0) > 0;
-  const resultColCount = 2 + (hasSaran ? 1 : 0);
-
   return (
-    <div className="min-h-screen bg-gray-100 p-6 max-w-7xl mx-auto flex flex-col gap-6">
+    <div className="min-h-screen bg-gray-100 p-6 max-w-6xl mx-auto flex flex-col gap-6">
+      {/* ===== HEADER PASIEN ===== */}
       <div className="bg-white rounded-xl shadow-sm p-6 flex flex-col md:flex-row justify-between items-start md:items-center border-l-4 border-blue-600 gap-4">
         <div>
           <h2 className="text-xl font-bold text-gray-800">
@@ -572,13 +595,16 @@ export default function DiagnosisPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+      {/* ===== LAYOUT UTAMA: Form kiri | Chat kanan ===== */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* ===== KOLOM KIRI: FORM INPUT (3/5) ===== */}
         <div className="lg:col-span-3 flex flex-col gap-5">
           <div className="bg-white rounded-xl shadow-sm p-6">
             <h3 className="text-base font-bold text-gray-800 border-b pb-3 mb-5">
               📋 Data Klinis & Pemeriksaan
             </h3>
             <div className="flex flex-col gap-5">
+              {/* 1. Anamnesis */}
               <div>
                 <h4 className="font-semibold text-blue-700 bg-blue-50 p-2 rounded text-sm mb-3">
                   1. Anamnesis
@@ -598,7 +624,6 @@ export default function DiagnosisPage() {
                       }
                     />
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Gejala Tambahan
@@ -614,6 +639,7 @@ export default function DiagnosisPage() {
                     />
                   </div>
 
+                  {/* Foto Pendukung — inline di bawah gejala */}
                   <div className="border border-gray-200 rounded-xl p-3 bg-gray-50">
                     <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1.5">
                       📸 Foto Pendukung Gejala
@@ -621,30 +647,46 @@ export default function DiagnosisPage() {
                         (bercak, ruam, benjolan, lebam — opsional)
                       </span>
                     </p>
-
                     {!imagePreview ? (
                       <div
                         className="border border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/40 transition"
                         onClick={() => fileInputRef.current?.click()}
                       >
-                        <p className="text-xs text-gray-400">
-                          Klik untuk upload foto
+                        <p className="text-xs text-gray-500 font-medium">
+                          Klik untuk upload foto atau file DICOM
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          JPG, PNG, WEBP, atau .dcm
                         </p>
                       </div>
                     ) : (
                       <div className="flex flex-col gap-2">
                         <div className="flex gap-3 items-start">
-                          <img
-                            src={imagePreview}
-                            alt="Preview"
-                            className="w-24 h-24 object-cover rounded-lg border border-gray-200 flex-shrink-0"
-                          />
+                          {imagePreview === "dicom" ? (
+                            <div className="w-24 h-24 rounded-lg border border-gray-200 bg-gray-900 flex flex-col items-center justify-center flex-shrink-0">
+                              <span className="text-3xl">🩻</span>
+                              <span className="text-xs text-gray-300 mt-1 font-mono">
+                                DICOM
+                              </span>
+                            </div>
+                          ) : (
+                            <img
+                              src={imagePreview}
+                              alt="Preview"
+                              className="w-24 h-24 object-cover rounded-lg border border-gray-200 flex-shrink-0"
+                            />
+                          )}
                           <div className="flex-1 flex flex-col gap-1.5">
                             <p className="text-xs text-gray-500">
-                              Foto terpilih
+                              {imagePreview === "dicom"
+                                ? "File DICOM terpilih"
+                                : "Foto terpilih"}
                             </p>
                             <button className="text-xs text-indigo-600 bg-indigo-50 border border-indigo-200 py-1.5 px-3 rounded-lg w-fit font-medium">
-                              ✅ Foto akan dianalisis bersama klik Analisis AI
+                              ✅{" "}
+                              {imagePreview === "dicom"
+                                ? "DICOM akan dikonversi & dianalisis bersama Analisis AI"
+                                : "Foto akan dianalisis bersama klik Analisis AI"}
                             </button>
                             <button
                               onClick={handleHapusGambar}
@@ -654,7 +696,6 @@ export default function DiagnosisPage() {
                             </button>
                           </div>
                         </div>
-
                         {imageAnalysis && (
                           <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col gap-1.5">
                             <p className="text-xs font-bold text-indigo-700">
@@ -687,11 +728,10 @@ export default function DiagnosisPage() {
                         )}
                       </div>
                     )}
-
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*"
+                      accept="image/*,.dcm,application/dicom"
                       className="hidden"
                       onChange={handleImageChange}
                     />
@@ -730,6 +770,7 @@ export default function DiagnosisPage() {
                 </div>
               </div>
 
+              {/* 2. Pemeriksaan Fisik & Lab */}
               <div>
                 <h4 className="font-semibold text-emerald-700 bg-emerald-50 p-2 rounded text-sm mb-3">
                   2. Pemeriksaan Fisik & Lab
@@ -740,7 +781,7 @@ export default function DiagnosisPage() {
                       Tanda Vital
                     </label>
                     <textarea
-                      className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:border-blue-500 min-h-[60px] text-sm disabled:bg-gray-50"
+                      className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:border-blue-500 min-h-[55px] text-sm disabled:bg-gray-50"
                       placeholder="TD: 120/80, Nadi: 80x, Suhu: 38°C, RR: 20x"
                       value={formData.tandaVital}
                       disabled={isLoading}
@@ -754,7 +795,7 @@ export default function DiagnosisPage() {
                       Hasil Laboratorium
                     </label>
                     <textarea
-                      className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:border-emerald-500 min-h-[60px] text-sm"
+                      className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:border-emerald-500 min-h-[55px] text-sm"
                       placeholder="Leukosit 15.000, Hb 12.5, Trombosit 90.000..."
                       value={formData.hasilLab}
                       disabled={isLoading}
@@ -766,6 +807,7 @@ export default function DiagnosisPage() {
                 </div>
               </div>
 
+              {/* 3. Catatan Bebas */}
               <div>
                 <h4 className="font-semibold text-violet-700 bg-violet-50 p-2 rounded text-sm mb-2 flex items-center gap-2">
                   3. Catatan Bebas
@@ -816,8 +858,9 @@ export default function DiagnosisPage() {
           </div>
         </div>
 
-        <div className="lg:col-span-2 lg:sticky lg:top-4">
-          <div className="bg-white rounded-xl shadow-sm p-5">
+        {/* ===== KOLOM KANAN: CHAT KONSULTASI (2/5) sticky ===== */}
+        <div className="lg:col-span-2">
+          <div className="bg-white rounded-xl shadow-sm p-5 sticky top-4">
             <h3 className="text-base font-bold text-gray-800 border-b pb-3 mb-4 flex items-center gap-2">
               💬 Chat Konsultasi
               {!aiResult && (
@@ -827,14 +870,14 @@ export default function DiagnosisPage() {
               )}
             </h3>
 
-            <div className="bg-gray-50 rounded-xl border border-gray-200 p-3 min-h-[180px] max-h-[28rem] overflow-y-auto flex flex-col gap-2 mb-3">
+            <div className="bg-gray-50 rounded-xl border border-gray-200 p-3 min-h-[320px] max-h-[480px] overflow-y-auto flex flex-col gap-2 mb-3">
               {chatHistory.length === 0 ? (
-                <div className="flex items-center justify-center h-32 text-center">
+                <div className="flex items-center justify-center h-full min-h-[280px] text-center">
                   <div className="text-gray-400">
-                    <div className="text-3xl mb-1">💬</div>
-                    <p className="text-xs">
+                    <div className="text-4xl mb-2">💬</div>
+                    <p className="text-xs leading-relaxed">
                       {aiResult
-                        ? "Tanyakan apa saja seputar hasil diagnosis di bawah."
+                        ? "Tanyakan apa saja seputar hasil diagnosis."
                         : "Lakukan analisis AI terlebih dahulu, lalu chat untuk tanya-jawab lanjutan."}
                     </p>
                   </div>
@@ -893,7 +936,7 @@ export default function DiagnosisPage() {
                 className="flex-1 border border-gray-300 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
                 placeholder={
                   aiResult
-                    ? "Tanya seputar diagnosis, obat, pemeriksaan lanjutan..."
+                    ? "Tanya seputar diagnosis, obat, pemeriksaan..."
                     : "Lakukan analisis AI dulu..."
                 }
                 value={chatInput}
@@ -912,15 +955,18 @@ export default function DiagnosisPage() {
               </button>
             </div>
             <p className="text-xs text-gray-400 mt-1.5">
-              💡 Chat ini menggunakan konteks hasil diagnosis yang sudah muncul
-              di bawah
+              💡 Chat menggunakan konteks hasil diagnosis di bawah
             </p>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5" ref={bottomRef}>
-        <h3 className="text-base font-bold text-gray-800 mb-4 border-b pb-3">
+      {/* ===== HASIL ANALISIS AI — full width di bawah ===== */}
+      <div
+        className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+        ref={bottomRef}
+      >
+        <h3 className="text-base font-bold text-gray-800 mb-5 border-b pb-3">
           🤖 Hasil Analisis AI
         </h3>
 
@@ -932,88 +978,23 @@ export default function DiagnosisPage() {
             </p>
           </div>
         ) : aiResult ? (
-          <div className="flex flex-col gap-4">
-            {aiResult.kelengkapan_data && (
-              <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
-                <p className="text-xs font-semibold text-blue-700 mb-0.5">
-                  📊 Status Data
-                </p>
-                <p className="text-xs text-blue-900">
-                  {aiResult.kelengkapan_data}
-                </p>
-              </div>
-            )}
-
-            {conversationHistory.length > 0 && (
-              <div className="bg-white rounded-xl border-l-4 border-amber-400 border border-gray-200 p-4">
-                <p className="text-sm font-bold text-amber-700 mb-2 flex items-center gap-2">
-                  🧠 Konteks Sesi Aktif
-                  <span className="font-normal text-amber-600 text-xs">
-                    ({conversationHistory.length} giliran)
-                  </span>
-                </p>
-                <div className="space-y-1.5 max-h-28 overflow-y-auto">
-                  {conversationHistory.map((turn, idx) => (
-                    <div
-                      key={idx}
-                      className="text-xs bg-amber-50 border border-amber-100 rounded-lg p-2"
-                    >
-                      <span className="font-semibold text-blue-600">
-                        Giliran #{idx + 1}:
-                      </span>{" "}
-                      <span className="text-gray-600">
-                        {turn.user.length > 120
-                          ? turn.user.slice(0, 120) + "..."
-                          : turn.user}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
+          <div className="flex flex-col gap-5">
             <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-              <h4 className="font-bold text-red-800 mb-2 text-sm flex items-center gap-1.5">
+              <h4 className="font-bold text-red-800 mb-2 text-sm">
                 🔍 Kemungkinan Diagnosis
               </h4>
-              <p className="text-red-900 text-xs leading-relaxed">
+              <p className="text-red-900 text-sm leading-relaxed">
                 {aiResult.penyakit}
               </p>
             </div>
 
-            {aiResult.pertanyaan_lanjutan?.length > 0 && (
-              <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
-                <h4 className="font-bold text-sky-800 mb-2 text-sm flex items-center gap-1.5">
-                  ❓ Pertanyaan Lanjutan
-                </h4>
-                <ul className="space-y-1">
-                  {aiResult.pertanyaan_lanjutan.map((q, i) => (
-                    <li
-                      key={i}
-                      className="text-xs text-sky-900 flex items-start gap-1.5"
-                    >
-                      <span className="text-sky-400 flex-shrink-0 mt-0.5">
-                        •
-                      </span>{" "}
-                      {q}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div
-              className={`grid grid-cols-1 ${
-                resultColCount === 3
-                  ? "md:grid-cols-3"
-                  : "md:grid-cols-2"
-              } gap-4`}
-            >
+            {/* Grid 3 kolom: ICD-10 | Rekomendasi | Saran Pemeriksaan */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
                 <h4 className="font-bold text-purple-800 mb-2 text-sm">
                   📋 Kode ICD-10
                 </h4>
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   {(aiResult.icd10 || []).map((item, idx) => (
                     <div key={idx} className="flex items-start gap-2">
                       <span className="font-mono font-bold text-purple-700 text-xs bg-purple-100 px-1.5 py-0.5 rounded flex-shrink-0">
@@ -1031,13 +1012,13 @@ export default function DiagnosisPage() {
                 <h4 className="font-bold text-emerald-800 mb-2 text-sm">
                   💊 Rekomendasi Terapi
                 </h4>
-                <ul className="space-y-1">
+                <ul className="space-y-1.5">
                   {(aiResult.rekomendasi || []).map((rek, idx) => (
                     <li
                       key={idx}
                       className="text-xs text-emerald-900 flex items-start gap-1.5 leading-relaxed"
                     >
-                      <span className="text-emerald-400 flex-shrink-0 mt-0.5">
+                      <span className="text-emerald-500 flex-shrink-0 mt-0.5">
                         •
                       </span>{" "}
                       {rek}
@@ -1046,47 +1027,67 @@ export default function DiagnosisPage() {
                 </ul>
               </div>
 
-              {hasSaran && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                  <h4 className="font-bold text-amber-800 mb-2 text-sm">
-                    🔬 Saran Pemeriksaan Lanjutan
-                  </h4>
-                  <ul className="space-y-1">
-                    {aiResult.saran_pemeriksaan.map((s, i) => (
-                      <li
-                        key={i}
-                        className="text-xs text-amber-900 flex items-start gap-1.5 leading-relaxed"
-                      >
-                        <span className="text-amber-500 flex-shrink-0 font-semibold">
-                          {i + 1}.
-                        </span>{" "}
-                        {s}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <h4 className="font-bold text-amber-800 mb-2 text-sm">
+                  🔬 Saran Pemeriksaan
+                </h4>
+                <ul className="space-y-1.5">
+                  {(aiResult.saran_pemeriksaan || []).map((s, i) => (
+                    <li
+                      key={i}
+                      className="text-xs text-amber-900 flex items-start gap-1.5 leading-relaxed"
+                    >
+                      <span className="text-amber-600 flex-shrink-0 font-semibold">
+                        {i + 1}.
+                      </span>{" "}
+                      {s}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
 
+            {/* Pertanyaan Lanjutan */}
+            {aiResult.pertanyaan_lanjutan?.length > 0 && (
+              <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
+                <h4 className="font-bold text-sky-800 mb-2 text-sm">
+                  ❓ Pertanyaan Lanjutan dari AI
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {aiResult.pertanyaan_lanjutan.map((q, i) => (
+                    <span
+                      key={i}
+                      className="text-xs text-sky-900 bg-sky-100 border border-sky-200 rounded-lg px-3 py-1.5 leading-relaxed"
+                    >
+                      {q}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Tanda Bahaya */}
             {aiResult.tanda_bahaya && (
               <div className="bg-red-100 border-2 border-red-400 rounded-xl p-4">
                 <h4 className="font-bold text-red-800 mb-1.5 text-sm">
-                  ⚠️ Tanda Bahaya
+                  ⚠️ Tanda Bahaya / Indikasi Rujukan Segera
                 </h4>
-                <p className="text-red-900 text-xs leading-relaxed">
+                <p className="text-red-900 text-sm leading-relaxed">
                   {aiResult.tanda_bahaya}
                 </p>
               </div>
             )}
 
+            {/* Baris bawah: Memory Panel + Catatan Lanjutan side by side */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Selective Memory */}
               {memoryChecks && (
-                <div className="border border-amber-200 bg-amber-50 rounded-xl p-3">
+                <div className="border border-amber-200 bg-amber-50 rounded-xl p-4">
                   <button
                     onClick={() => setShowMemoryPanel(!showMemoryPanel)}
                     className="flex items-center gap-2 w-full text-left"
                   >
-                    <span className="text-xs font-semibold text-amber-800">
+                    <span className="text-sm font-semibold text-amber-800">
                       🧠 Pilih untuk disimpan ({memoryCount} aktif)
                     </span>
                     <span className="ml-auto text-amber-500 text-xs">
@@ -1094,7 +1095,7 @@ export default function DiagnosisPage() {
                     </span>
                   </button>
                   {showMemoryPanel && (
-                    <div className="mt-3 flex flex-col gap-3">
+                    <div className="mt-3 grid grid-cols-1 gap-3">
                       <div>
                         <p className="text-xs font-bold text-purple-700 mb-1.5">
                           Kode ICD-10
@@ -1133,9 +1134,7 @@ export default function DiagnosisPage() {
                             >
                               <input
                                 type="checkbox"
-                                checked={
-                                  memoryChecks.rekomendasi[idx] || false
-                                }
+                                checked={memoryChecks.rekomendasi[idx] || false}
                                 onChange={() => updateRekomendasiCheck(idx)}
                                 className="mt-0.5 accent-emerald-600 w-4 h-4 flex-shrink-0"
                               />
@@ -1151,46 +1150,49 @@ export default function DiagnosisPage() {
                 </div>
               )}
 
+              {/* Catatan Lanjutan */}
               <div className="border border-sky-200 bg-sky-50 rounded-xl p-4">
                 <h4 className="font-semibold text-sky-800 mb-1 text-sm">
                   📝 Catatan Lanjutan
                 </h4>
                 <p className="text-xs text-sky-600 mb-2">
-                  Tambah info baru → AI perbarui analisis dengan konteks ini.
+                  Tambah info baru → AI perbarui analisis.
                 </p>
                 <textarea
-                  className="w-full border border-sky-200 rounded-lg p-2.5 text-xs outline-none focus:border-sky-500 min-h-[65px] bg-white"
-                  placeholder="Contoh: Pasien sebut demam naik turun, berkeringat malam, sudah 5 hari..."
+                  className="w-full border border-sky-200 rounded-lg p-2.5 text-xs outline-none focus:border-sky-500 min-h-[80px] bg-white"
+                  placeholder="Contoh: Pasien menyebut berkeringat malam, sudah 5 hari, trombosit 85.000..."
                   value={catatanLanjutan}
                   onChange={(e) => setCatatanLanjutan(e.target.value)}
                 />
                 <button
                   onClick={handleLanjutkanAnalisis}
                   disabled={isLoading || !catatanLanjutan.trim()}
-                  className="mt-2 w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold py-2.5 rounded-lg transition disabled:opacity-40"
+                  className="mt-2 w-full bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold py-2.5 rounded-lg transition disabled:opacity-40"
                 >
                   🔄 Lanjutkan Analisis
                 </button>
               </div>
             </div>
 
+            {/* Disclaimer */}
             <p className="text-xs text-gray-500 text-center bg-gray-50 py-2.5 rounded-lg border border-gray-100">
               ⚠️ Hasil AI hanya sebagai Clinical Decision Support. Keputusan
-              medis mutlak tanggung jawab dokter.
+              medis mutlak tanggung jawab dokter pemeriksa.
             </p>
 
+            {/* Tombol Simpan + PDF */}
             {!isSaving ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="flex flex-col sm:flex-row gap-3">
                 <button
                   onClick={handleSimpan}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition shadow text-sm"
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition shadow text-sm"
                 >
                   💾 Simpan ke Riwayat
                 </button>
                 <button
                   onClick={handleUlangi}
                   disabled={isLoading}
-                  className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl transition shadow text-sm disabled:opacity-50"
+                  className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl transition shadow text-sm disabled:opacity-50"
                 >
                   🔄 Ulangi Diagnosis
                 </button>
@@ -1224,9 +1226,9 @@ export default function DiagnosisPage() {
             )}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center py-12 text-gray-400 text-center">
+          <div className="flex flex-col items-center justify-center py-14 text-gray-400 text-center">
             <svg
-              className="w-14 h-14 mb-3 text-gray-200"
+              className="w-16 h-16 mb-4 text-gray-200"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -1238,15 +1240,42 @@ export default function DiagnosisPage() {
                 d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
               />
             </svg>
-            <p className="text-sm">
-              Hasil analisis AI akan muncul di sini.
-            </p>
-            <p className="text-xs mt-1">
+            <p className="text-base">Hasil analisis AI akan muncul di sini.</p>
+            <p className="text-sm mt-1">
               Lengkapi form di atas dan klik Analisis AI.
             </p>
           </div>
         )}
       </div>
+
+      {/* Konteks Sesi Aktif */}
+      {conversationHistory.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-amber-400">
+          <p className="text-sm font-bold text-amber-700 mb-2 flex items-center gap-2">
+            🧠 Konteks Sesi Aktif
+            <span className="font-normal text-amber-600 text-xs">
+              ({conversationHistory.length} giliran)
+            </span>
+          </p>
+          <div className="space-y-1.5 max-h-28 overflow-y-auto">
+            {conversationHistory.map((turn, idx) => (
+              <div
+                key={idx}
+                className="text-xs bg-amber-50 border border-amber-100 rounded-lg p-2"
+              >
+                <span className="font-semibold text-blue-600">
+                  Giliran #{idx + 1}:
+                </span>{" "}
+                <span className="text-gray-600">
+                  {turn.user.length > 120
+                    ? turn.user.slice(0, 120) + "..."
+                    : turn.user}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <br />
     </div>

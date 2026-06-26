@@ -184,7 +184,6 @@ class PatientRegisterRequest(BaseModel):
     weight: Optional[float] = None
     height: Optional[float] = None
 
-class ImageAnalysisRequest(BaseModel):
     patient_id: Optional[int] = None
     name: str
     age: int
@@ -209,6 +208,58 @@ class ChatRequest(BaseModel):
 
 
 # ==========================================
+# DICOM CONVERTER
+# ==========================================
+def convert_dicom_to_base64(dicom_bytes: bytes) -> tuple[str, str]:
+    """
+    Convert file DICOM ke base64 PNG untuk dikirim ke AI.
+    Return: (base64_string, image_type)
+    """
+    import io
+    import pydicom
+    from pydicom.pixel_data_handlers.util import apply_voi_lut
+    import numpy as np
+    from PIL import Image as PILImage
+
+    ds = pydicom.dcmread(io.BytesIO(dicom_bytes))
+    pixel_array = ds.pixel_array
+
+    # Apply VOI LUT jika ada (untuk windowing CT/MRI)
+    try:
+        pixel_array = apply_voi_lut(pixel_array, ds)
+    except Exception:
+        pass
+
+    # Normalize ke 0-255
+    pixel_min = pixel_array.min()
+    pixel_max = pixel_array.max()
+    if pixel_max > pixel_min:
+        pixel_array = ((pixel_array - pixel_min) / (pixel_max - pixel_min) * 255).astype(np.uint8)
+    else:
+        pixel_array = pixel_array.astype(np.uint8)
+
+    # Handle grayscale vs RGB
+    if len(pixel_array.shape) == 2:
+        img = PILImage.fromarray(pixel_array, mode='L').convert('RGB')
+    elif len(pixel_array.shape) == 3 and pixel_array.shape[2] == 3:
+        img = PILImage.fromarray(pixel_array, mode='RGB')
+    else:
+        img = PILImage.fromarray(pixel_array[:, :, 0], mode='L').convert('RGB')
+
+    # Resize jika terlalu besar (max 1024px sisi terpanjang)
+    max_size = 1024
+    w, h = img.size
+    if max(w, h) > max_size:
+        ratio = max_size / max(w, h)
+        img = img.resize((int(w * ratio), int(h * ratio)), PILImage.LANCZOS)
+
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+    return b64, "image/png"
+
+
+# ==========================================
 # AI FUNCTIONS
 # ==========================================
 def generate_ai_diagnosis(patient_data: dict, db_history_text: str, conversation_history: list,
@@ -223,55 +274,59 @@ def generate_ai_diagnosis(patient_data: dict, db_history_text: str, conversation
     system_prompt = """
 Anda adalah asisten dokter spesialis (Clinical Decision Support System) yang sangat ahli dan akurat.
 Tugas Anda adalah menganalisis SEMUA data klinis pasien — termasuk keluhan, gejala, tanda vital,
-hasil lab, foto temuan fisik (jika ada), dan catatan dokter — lalu memberikan output yang tepat.
+hasil lab, gambar/foto/DICOM (jika ada), dan catatan dokter — lalu memberikan output klinis yang tepat.
 
 INSTRUKSI PENTING — BACA CATATAN DOKTER:
-Catatan dokter adalah arahan dari dokter pemeriksa. Jika dokter menulis sesuatu seperti:
+Catatan dokter adalah arahan dari dokter pemeriksa. Jika dokter menulis seperti:
   - "belum yakin", "cek lab dulu", "perlu pemeriksaan lebih lanjut", "tunggu hasil lab"
   - atau indikasi serupa bahwa data belum lengkap
 Maka AI WAJIB:
   1. Menyatakan diagnosis masih tentatif/belum pasti di field "penyakit"
   2. Mengutamakan saran pemeriksaan di field "saran_pemeriksaan"
-  3. Mengisi "kelengkapan_data" dengan penjelasan data apa yang masih kurang
-  4. Tetap berikan kemungkinan awal, tapi sampaikan ketidakpastiannya
+  3. Tetap berikan kemungkinan diagnosis awal disertai catatan ketidakpastiannya
 
-INSTRUKSI FOTO / GAMBAR PENDUKUNG:
-Jika ada foto temuan fisik yang diberikan (ruam, benjolan, bercak, lebam, luka, dll):
-  - Analisis foto sebagai bagian dari data klinis, bukan terpisah
-  - Hubungkan temuan visual dengan keluhan dan gejala pasien
-  - Sebutkan temuan foto secara singkat di bagian "penyakit" jika relevan
+INSTRUKSI ANALISIS GAMBAR / FOTO / DICOM:
+Jika ada gambar yang dilampirkan (foto klinis, DICOM radiologi, foto temuan fisik, dll):
+  - Analisis gambar sebagai bagian INTEGRAL dari data klinis — bukan tambahan terpisah
+  - Untuk foto klinis (ruam, lesi, luka, bengkak): deskripsikan morfologi, distribusi, warna, batas lesi
+    dan hubungkan langsung dengan diagnosis banding yang dipertimbangkan
+  - Untuk DICOM/radiologi (X-ray, CT, MRI, USG): identifikasi struktur anatomis, densitas, pola,
+    dan temuan patologis yang terlihat; sebutkan modalitas yang kemungkinan digunakan
+  - Integrasikan temuan visual ke dalam reasoning diagnosis di field "penyakit"
+  - Sebutkan secara eksplisit apakah temuan gambar mendukung atau menyingkirkan diagnosis tertentu
+  - Jika gambar tidak cukup jelas atau kualitas buruk, tetap berikan interpretasi terbaik
+    dan catat limitasinya di dalam teks "penyakit"
 
 PERHATIAN UMUM:
-- Dosis obat WAJIB mempertimbangkan Umur dan Berat Badan pasien.
+- Dosis obat WAJIB mempertimbangkan Umur dan Berat Badan pasien secara spesifik.
 - WAJIB periksa alergi — jangan rekomendasikan obat yang ada di daftar alergi.
-- Pertimbangkan diagnosis banding (differential diagnosis).
+- Selalu pertimbangkan diagnosis banding (differential diagnosis).
 
-FORMAT OUTPUT — WAJIB JSON SAJA (tanpa teks di luar JSON):
+FORMAT OUTPUT — WAJIB JSON SAJA (tanpa teks apapun di luar JSON):
 {
-    "penyakit": "Diagnosis kemungkinan beserta alasan klinis. Jika belum yakin karena data kurang/catatan dokter minta periksa dulu, nyatakan dengan jelas bahwa ini masih tentatif.",
+    "penyakit": "Diagnosis kemungkinan beserta reasoning klinis lengkap, termasuk integrasi temuan gambar jika ada. Jika belum yakin, nyatakan tentatif dan jelaskan alasannya.",
     "icd10": [
         {"kode": "A90", "label": "Dengue fever"}
     ],
     "rekomendasi": [
-        "Nama obat generik — dosis — frekuensi — durasi",
+        "Nama obat generik — dosis spesifik sesuai BB/usia — frekuensi — durasi",
         "Tindakan non-farmakologi",
         "Pemeriksaan penunjang spesifik"
     ],
     "saran_pemeriksaan": [
-        "Nama pemeriksaan — alasan spesifik mengapa perlu untuk kasus ini"
+        "Nama pemeriksaan — alasan klinis spesifik mengapa diperlukan untuk kasus ini"
     ],
     "pertanyaan_lanjutan": [
-        "Pertanyaan anamnesis yang masih perlu dijawab pasien"
+        "Pertanyaan anamnesis yang masih perlu digali untuk memastikan diagnosis"
     ],
-    "tanda_bahaya": "Red flag spesifik untuk kasus ini yang butuh rujukan segera.",
-    "kelengkapan_data": "Status data: cukup/belum cukup. Jika belum, sebutkan data apa yang masih diperlukan."
+    "tanda_bahaya": "Red flag spesifik untuk kondisi pasien ini yang mengharuskan rujukan segera ke IGD atau spesialis."
 }
 
 ATURAN OUTPUT:
 - 2-4 kode ICD-10 paling relevan.
-- Rekomendasi minimal 3 poin: farmakologi, non-farmakologi, penunjang.
-- Saran pemeriksaan: 2-4 item, spesifik sesuai kasus.
-- Pertanyaan lanjutan: 2-3 pertanyaan untuk anamnesis lebih lanjut.
+- Rekomendasi minimal 3 poin: farmakologi (dengan dosis), non-farmakologi, penunjang.
+- Saran pemeriksaan: 2-4 item spesifik sesuai kasus.
+- Pertanyaan lanjutan: 2-3 pertanyaan relevan.
 - Keputusan klinis final adalah wewenang dokter pemeriksa.
 """
 
@@ -311,11 +366,11 @@ DATA KLINIS KUNJUNGAN SAAT INI:
 - Hasil Laboratorium: {patient_data.get('hasilLab') or 'Belum ada'}
 - Catatan / Arahan Dokter: {patient_data.get('catatan') or 'Tidak ada'}
 - Keterangan Tambahan: {patient_data.get('teks_bebas') or 'Tidak ada'}
-{"" if not image_base64 else "- Foto Temuan Fisik: Terlampir (lihat gambar)"}
+{"" if not image_base64 else f"- Gambar Klinis Terlampir: {image_type} (lihat gambar — analisis sebagai bagian integral diagnosis)"}
 
 {f"RIWAYAT CHAT SESI INI:{chr(10)}{chat_text}" if chat_text else ""}
 
-{"Analisis seluruh data di atas TERMASUK foto yang terlampir sebagai satu kesatuan." if image_base64 else "Berikan analisis diagnosis lengkap."} Output harus JSON.
+{"Analisis seluruh data di atas TERMASUK gambar/DICOM yang terlampir sebagai satu kesatuan klinis yang terintegrasi." if image_base64 else "Berikan analisis diagnosis lengkap."} Output harus JSON.
 """
 
     # Bangun content pesan — gabungkan teks + gambar jika ada dalam satu message
@@ -344,7 +399,6 @@ DATA KLINIS KUNJUNGAN SAAT INI:
         "saran_pemeriksaan": [],
         "pertanyaan_lanjutan": [],
         "tanda_bahaya": "Tidak ada tanda bahaya kritis yang teridentifikasi. Tetap monitor kondisi pasien.",
-        "kelengkapan_data": "Data telah dianalisis."
     }
     for key, val in defaults.items():
         if key not in result:
@@ -353,7 +407,6 @@ DATA KLINIS KUNJUNGAN SAAT INI:
     return result
 
 
-def analyze_image_with_ai(image_base64: str, image_type: str, patient_data: dict):
     system_prompt = """
 Anda adalah asisten dokter yang membantu menganalisis temuan fisik dari foto/gambar umum.
 Foto ini bukan hasil alat medis khusus, melainkan foto biasa dari pasien.
@@ -829,25 +882,47 @@ def analyze_diagnosis(req: DiagnosisRequest):
         patient_dict = req.dict()
         # Simpan gambar ke disk jika ada, sebelum dikirim ke AI
         saved_image_path = ""
+        final_image_base64 = req.image_base64
+        final_image_type = req.image_type or "image/jpeg"
+
         if req.image_base64:
             try:
                 img_bytes = base64.b64decode(req.image_base64)
-                ext = (req.image_type or "image/jpeg").split("/")[-1]
-                img_filename = f"{uuid.uuid4().hex}.{ext}"
-                img_path = os.path.join(UPLOAD_DIR, img_filename)
-                with open(img_path, "wb") as f_img:
-                    f_img.write(img_bytes)
+
+                # Deteksi DICOM — cek magic bytes atau image_type
+                is_dicom = (
+                    (req.image_type or "").lower() in ("application/dicom", "image/dicom", ".dcm")
+                    or img_bytes[:4] == b"DICM"  # DICOM magic di offset 128
+                    or img_bytes[128:132] == b"DICM"
+                )
+
+                if is_dicom:
+                    # Convert DICOM ke PNG base64
+                    final_image_base64, final_image_type = convert_dicom_to_base64(img_bytes)
+                    # Simpan versi PNG hasil konversi
+                    png_bytes = base64.b64decode(final_image_base64)
+                    img_filename = f"{uuid.uuid4().hex}_dicom.png"
+                    img_path = os.path.join(UPLOAD_DIR, img_filename)
+                    with open(img_path, "wb") as f_img:
+                        f_img.write(png_bytes)
+                else:
+                    ext = final_image_type.split("/")[-1] if "/" in final_image_type else "jpg"
+                    img_filename = f"{uuid.uuid4().hex}.{ext}"
+                    img_path = os.path.join(UPLOAD_DIR, img_filename)
+                    with open(img_path, "wb") as f_img:
+                        f_img.write(img_bytes)
+
                 saved_image_path = img_path
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[image] error processing: {e}")
 
         ai_result = generate_ai_diagnosis(
             patient_dict,
             db_history_text,
             req.conversation_history or [],
             req.chat_konsultasi or [],
-            image_base64=req.image_base64,
-            image_type=req.image_type or "image/jpeg"
+            image_base64=final_image_base64,
+            image_type=final_image_type
         )
         ai_result["saved_image_path"] = saved_image_path
 
